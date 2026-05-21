@@ -14,22 +14,43 @@ import {
   rem,
   Flex,
 } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { supabase } from "@/lib/supabase";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function LandingPage() {
+  const handleGoogleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin + "/dashboard" },
+    });
+
+    if (error) {
+      console.error("Google Auth error:", error.message);
+      notifications.show({
+        title: "Authentication failed",
+        message: error.message,
+        color: "red",
+      });
+    }
+  };
+
   return (
     <Box
       className="bg-hero"
-      style={{ 
-        minHeight: "100vh", 
-        position: "relative", 
+      style={{
+        minHeight: "100vh",
+        position: "relative",
         overflow: "hidden",
         display: "flex",
-        flexDirection: "column"
+        flexDirection: "column",
       }}
     >
       {/* Header */}
-      <Box component="header" style={{ position: "relative", zIndex: 10, flexShrink: 0 }}>
+      <Box
+        component="header"
+        style={{ position: "relative", zIndex: 10, flexShrink: 0 }}
+      >
         <Container size="lg" px="md">
           <Group justify="space-between" h={rem(80)}>
             <Group gap="xs">
@@ -45,7 +66,11 @@ export default function LandingPage() {
         </Container>
       </Box>
 
-      <Container size="lg" px="md" style={{ flex: 1, display: "flex", alignItems: "center" }}>
+      <Container
+        size="lg"
+        px="md"
+        style={{ flex: 1, display: "flex", alignItems: "center" }}
+      >
         <Flex
           direction="column"
           align="center"
@@ -98,8 +123,7 @@ export default function LandingPage() {
 
               <Stack gap="sm" w="100%" mt="md">
                 <Button
-                  component={Link}
-                  to="/dashboard"
+                  onClick={handleGoogleLogin}
                   size="lg"
                   radius="xl"
                   variant="white"

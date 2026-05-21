@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
-import {
+import { useState, useEffect } from "react";
+import { // Removed `useTheme` as it's not directly used in Onboarding.jsx
   Container,
   Stack,
   Group,
@@ -19,10 +19,14 @@ import {
   Chip,
   UnstyledButton,
   rem,
+  LoadingOverlay,
+  Image,
+  Avatar,
 } from "@mantine/core";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { useTheme } from "@/lib/theme";
+import { notifications } from "@mantine/notifications";
+import { ThemeToggle } from "@/components/theme-toggle"; // Keep ThemeToggle for UI
 import { equipmentCategories } from "@/lib/mock-data";
+import { equipmentLibrary, getEquipmentById } from "@/lib/equipmentLibrary";
 import {
   ArrowLeft,
   ArrowRight,
@@ -34,6 +38,8 @@ import {
   Heart,
   Check,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase"; // Import Supabase client
+import { generateWorkoutPlan } from "@/lib/gemini";
 
 const goals = [
   { id: "muscle", label: "Build Muscle", icon: Dumbbell },
@@ -46,19 +52,162 @@ const goals = [
 function Onboarding() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false); // Loading state for API calls
+  const [errors, setErrors] = useState({});
+
+  // Step 1 states
+  const [name, setName] = useState("");
+  const [age, setAge] = useState(null);
   const [weightUnit, setWeightUnit] = useState("lbs");
+  const [weightValue, setWeightValue] = useState(null);
   const [heightUnit, setHeightUnit] = useState("ft");
+  const [heightFtValue, setHeightFtValue] = useState(null);
+  const [heightInValue, setHeightInValue] = useState(null);
+  const [heightCmValue, setHeightCmValue] = useState(null);
   const [sex, setSex] = useState("male");
-  const [goal, setGoal] = useState("muscle");
-  const [equipment, setEquipment] = useState(["Full Gym"]);
-  const [frequency, setFrequency] = useState([4]);
+  // Step 2 states (already existing)
+  const [goal, setGoal] = useState("muscle"); // Default to muscle
+  const [equipment, setEquipment] = useState(equipmentLibrary.map(eq => eq.id)); // Default to all equipment IDs
+  const [frequency, setFrequency] = useState([4]); // Default frequency
   const [duration, setDuration] = useState("60");
   const [experience, setExperience] = useState("intermediate");
 
+  useEffect(() => {
+    const prefillUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.user_metadata?.full_name) {
+        setName(user.user_metadata.full_name);
+      } else if (user?.user_metadata?.name) {
+        setName(user.user_metadata.name);
+      }
+    };
+    prefillUser();
+  }, []);
+
   const toggleEquipment = (e) =>
-    setEquipment((prev) =>
-      prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e],
+    setEquipment((prev) => // e is now the equipment ID
+      prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e], // Store IDs
     );
+
+  const handleContinue = () => {
+    const newErrors = {};
+    
+    // Basic validation for Step 1
+    if (!name.trim()) newErrors.name = "Name is required";
+    if (age === null) newErrors.age = "Age is required";
+    if (weightValue === null) newErrors.weight = "Weight is required";
+    
+    if (heightUnit === "ft") {
+      if (heightFtValue === null) newErrors.heightFt = "Required";
+      if (heightInValue === null) newErrors.heightIn = "Required";
+    } else {
+      if (heightCmValue === null) newErrors.heightCm = "Required";
+    }
+
+    setErrors(newErrors);
+    
+    if (Object.keys(newErrors).length === 0) {
+      setStep(2);
+    }
+  };
+
+  const handleGeneratePlan = async () => {
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        notifications.show({
+          title: "Authentication required",
+          message: "You must be logged in to generate a plan.",
+          color: "red",
+        });
+        navigate("/"); // Redirect to login/home if not logged in
+        return;
+      }
+
+      // Standardize weight to lbs
+      let weightLbs;
+      if (weightUnit === "kg") {
+        weightLbs = weightValue * 2.20462;
+      } else {
+        weightLbs = weightValue;
+      }
+
+      // Convert height to cm
+      let heightCm;
+      if (heightUnit === "ft") {
+        heightCm = (heightFtValue * 30.48) + (heightInValue * 2.54);
+      } else {
+        heightCm = heightCmValue;
+      }
+
+      const profileData = {
+        user_id: user.id,
+        name,
+        email: user.email,
+        age,
+        weight: weightLbs, // Store in lbs
+        weight_unit: "lbs", // Standardize unit in DB
+        height_cm: heightCm,
+        sex,
+        fitness_goal: goal,
+        equipment,
+        gym_frequency: frequency[0], // Slider returns an array
+        workout_duration: parseInt(duration), // SegmentedControl returns string
+        experience_level: experience,
+      };
+
+      // Save/Update profile data
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .upsert(profileData, { onConflict: "user_id" }); // Use upsert to create or update
+
+      if (profileError) {
+        console.error("Error saving profile:", profileError);
+        notifications.show({
+          title: "Profile error",
+          message: "Failed to save profile information. Please try again.",
+          color: "red",
+        });
+        setLoading(false);
+        return;
+      }
+
+      // --- Call Gemini API ---
+      const planJson = await generateWorkoutPlan(profileData);
+
+      // Save workout plan to database
+      const { error: planError } = await supabase.from("workout_plans").insert({
+        user_id: user.id,
+        plan_json: planJson,
+        fitness_goal: profileData.fitness_goal,
+        experience_level: profileData.experience_level,
+      });
+
+      if (planError) {
+        console.error("Error saving workout plan:", planError);
+        notifications.show({
+          title: "Storage error",
+          message: "Plan generated, but we couldn't save it to your history.",
+          color: "orange",
+        });
+        setLoading(false);
+        return;
+      }
+
+      navigate("/dashboard");
+    } catch (error) {
+      console.error("An unexpected error occurred:", error);
+      notifications.show({
+        title: "Generation failed",
+        message: "An unexpected error occurred while creating your plan.",
+        color: "red",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <Box className="bg-hero" style={{ minHeight: "100vh" }} py={32} px="md">
@@ -100,6 +249,7 @@ function Onboarding() {
           className="glass shadow-glow"
           radius="32px"
           p={{ base: "xl", md: 40 }}
+          pos="relative" // For LoadingOverlay
         >
           {step === 1 ? (
             <>
@@ -113,15 +263,19 @@ function Onboarding() {
               <Stack mt={32} gap="xl">
                 <TextInput
                   label="Name"
-                  defaultValue="Alex Carter"
+                  value={name}
+                  onChange={(event) => setName(event.currentTarget.value)}
                   size="md"
                   radius="md"
+                  error={errors.name}
                 />
                 <NumberInput
                   label="Age"
-                  defaultValue={28}
+                  value={age}
+                  onChange={setAge}
                   size="md"
                   radius="md"
+                  error={errors.age}
                 />
 
                 <Field label="Biological sex">
@@ -140,10 +294,13 @@ function Onboarding() {
                 <Field label="Weight">
                   <Group grow gap="xs">
                     <NumberInput
-                      defaultValue={weightUnit === "lbs" ? 175 : 80}
+                      value={weightValue}
+                      onChange={setWeightValue}
                       size="md"
                       radius="md"
                       style={{ flex: 1 }}
+                      min={1}
+                      error={errors.weight}
                     />
                     <SegmentedControl
                       value={weightUnit}
@@ -160,24 +317,34 @@ function Onboarding() {
                     {heightUnit === "ft" ? (
                       <>
                         <NumberInput
-                          defaultValue={5}
+                          value={heightFtValue}
                           placeholder="ft"
                           size="md"
                           radius="md"
+                          onChange={setHeightFtValue}
+                          min={1}
+                          error={errors.heightFt}
                         />
                         <NumberInput
-                          defaultValue={10}
+                          value={heightInValue}
                           placeholder="in"
                           size="md"
                           radius="md"
+                          onChange={setHeightInValue}
+                          min={0}
+                          max={11}
+                          error={errors.heightIn}
                         />
                       </>
                     ) : (
                       <NumberInput
-                        defaultValue={178}
+                        value={heightCmValue}
                         placeholder="cm"
                         size="md"
                         radius="md"
+                        onChange={setHeightCmValue}
+                        min={1}
+                        error={errors.heightCm}
                       />
                     )}
                     <SegmentedControl
@@ -192,7 +359,7 @@ function Onboarding() {
               </Stack>
 
               <Button
-                onClick={() => setStep(2)}
+                onClick={handleContinue}
                 fullWidth
                 size="lg"
                 radius="xl"
@@ -275,17 +442,23 @@ function Onboarding() {
                         >
                           {cat}
                         </Text>
-                        <Group gap={8}>
-                          {items.map((item) => {
-                            const active = equipment.includes(item);
+                        <Group gap={8} style={{ flexWrap: 'wrap' }}>
+                          {items.map((item) => { // item is now { id, name }
+                            const active = equipment.includes(item.id);
+                            const equip = getEquipmentById(item.id);
                             return (
                               <Chip
-                                key={item}
+                                key={item.id}
                                 checked={active}
-                                onChange={() => toggleEquipment(item)}
+                                onChange={() => toggleEquipment(item.id)} // Pass ID to toggle
                                 size="sm"
                               >
-                                {item}
+                                <Group gap={6} wrap="nowrap">
+                                  {equip?.image_url && (
+                                    <Avatar src={equip.image_url} size="xs" radius="xs" />
+                                  )}
+                                  {item.name}
+                                </Group>
                               </Chip>
                             );
                           })}
@@ -353,12 +526,13 @@ function Onboarding() {
                   <ArrowLeft size={18} />
                 </Button>
                 <Button
-                  onClick={() => navigate("/dashboard")}
+                  onClick={handleGeneratePlan}
                   size="lg"
                   radius="xl"
                   style={{ flex: 1 }}
                   className="shadow-glow"
                   leftSection={<Sparkles size={18} />}
+                  loading={loading}
                 >
                   Generate My Plan
                 </Button>
@@ -366,6 +540,7 @@ function Onboarding() {
             </>
           )}
         </Paper>
+        <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ radius: "sm", blur: 2 }} />
       </Container>
     </Box>
   );

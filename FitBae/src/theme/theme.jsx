@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { MantineProvider, createTheme, rem } from "@mantine/core";
+import { Notifications } from "@mantine/notifications";
 
 const ThemeContext = createContext({
   accent: "blue",
@@ -40,7 +41,6 @@ export function ThemeProvider({ children }) {
         theme={createTheme({
           primaryColor: accent,
           colors: {
-            // Mantine doesn't have 'purple' by default. We add it here to fix the crash.
             purple: [
               "#f3f0ff",
               "#e5dbff",
@@ -48,7 +48,7 @@ export function ThemeProvider({ children }) {
               "#b197fc",
               "#9775fa",
               "#845ef7",
-              "var(--primary)", // Uses your CSS variable for the main shade
+              "#7950f2", // Replaced var(--primary) with valid hex
               "#7048e8",
               "#6741d9",
               "#5f3dc4",
@@ -60,7 +60,7 @@ export function ThemeProvider({ children }) {
               "#74c0fc",
               "#4dabf7",
               "#339af0",
-              "var(--primary)", // Uses your CSS variable for the main shade
+              "#228be6", // Replaced var(--primary) with valid hex
               "#1c7ed6",
               "#1971c2",
               "#1864ab",
@@ -168,6 +168,7 @@ export function ThemeProvider({ children }) {
         })}
         forceColorScheme="dark"
       >
+        <Notifications />
         {children}
       </MantineProvider>
     </ThemeContext.Provider>

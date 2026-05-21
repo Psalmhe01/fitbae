@@ -8,10 +8,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mantine/charts": "^9.2.1",
     "@mantine/core": "^9.2.1",
     "@mantine/dates": "^9.2.1",
     "@mantine/form": "^9.2.1",
     "@mantine/hooks": "^9.2.1",
+    "@mantine/notifications": "^9.2.1",
     "@supabase/supabase-js": "^2.106.1",
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",

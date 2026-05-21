@@ -1,4 +1,4 @@
-import { useTheme } from "@/lib/theme";
+import { useTheme } from "@/theme/theme";
 import { Button } from "@mantine/core";
 import { Palette } from "lucide-react";
 

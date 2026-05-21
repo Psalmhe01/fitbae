@@ -1,5 +1,6 @@
-import { Link } from "react-router-dom";
-import { weeklyPlan } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 import { Dumbbell, Coffee } from "lucide-react";
 import {
   Stack,
@@ -13,10 +14,46 @@ import {
   Anchor,
   Center,
   Box,
+  Loader,
+  Image,
+  rem,
 } from "@mantine/core";
-import { useTheme } from "@/lib/theme";
+import { getEquipmentById } from "@/lib/equipmentLibrary";
 
 export default function PlanPage() {
+  const [plan, setPlan] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchPlan = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) return navigate("/");
+
+      const { data } = await supabase
+        .from("workout_plans")
+        .select("plan_json")
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (data) setPlan(data.plan_json.weekly_schedule || []);
+      setLoading(false);
+    };
+    fetchPlan();
+  }, [navigate]);
+
+  if (loading) {
+    return (
+      <Center h="50vh">
+        <Loader />
+      </Center>
+    );
+  }
+
   return (
     <Stack gap="xl">
       <Stack gap={4}>
@@ -27,7 +64,7 @@ export default function PlanPage() {
       </Stack>
 
       <Stack gap="md">
-        {weeklyPlan.map((d) => (
+        {plan.map((d) => (
           <Paper
             key={d.day}
             className="glass"
@@ -76,12 +113,41 @@ export default function PlanPage() {
                     )}
                     <Group justify="space-between" wrap="nowrap">
                       <Box style={{ minWidth: 0 }}>
+                        {ex.equipment_id && (
+                          <Image
+                            src={getEquipmentById(ex.equipment_id)?.image_url}
+                            alt={getEquipmentById(ex.equipment_id)?.name}
+                            w={40}
+                            h={40}
+                            fit="contain"
+                            mb="sm"
+                            fallbackSrc="https://placehold.co/40?text=?"
+                          />
+                        )}
                         <Text size="sm" fw={600} truncate="end">
                           {ex.name}
                         </Text>
-                        <Text c="dimmed" size="xs">
-                          rest {ex.rest}
-                        </Text>
+                        <Group gap={8}>
+                          <Text c="dimmed" size="xs">
+                            rest {ex.rest_seconds}s
+                          </Text>
+                          {ex.muscle_group && (
+                            <Text size="xs" c="primary" fw={600}>
+                              • {ex.muscle_group}
+                            </Text>
+                          )}
+                        </Group>
+                        {ex.instructions && (
+                          <Box mt="xs">
+                            <Stack gap={2}>
+                              {ex.instructions.map((step, idx) => (
+                                <Text key={idx} size="xs" c="dimmed" lh={1.3}>
+                                  • {step}
+                                </Text>
+                              ))}
+                            </Stack>
+                          </Box>
+                        )}
                       </Box>
                       <Text
                         size="sm"

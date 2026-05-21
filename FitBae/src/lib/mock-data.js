@@ -1,18 +1,23 @@
+import { equipmentLibrary } from "./equipmentLibrary";
+
 export const mockUser = {
   name: "Ava Turner",
   initials: "AT",
   frequency: 4,
   goal: "Build strength",
   experience: "Intermediate",
-  lastGenerated: "2 days ago",
+  lastGenerated: "2 days ago", // This is a mock value, not used in logic
   duration: 60,
 };
 
-export const equipmentCategories = {
-  Gym: ["Olympic Barbell", "Adjustable Dumbbells", "Commercial Gym Access"],
-  Home: ["Bodyweight", "Resistance Bands", "Dumbbells"],
-  Recovery: ["Yoga Mat", "Foam Roller", "Massage Ball"],
-};
+// Dynamically create equipmentCategories from equipmentLibrary
+export const equipmentCategories = equipmentLibrary.reduce((acc, item) => {
+  if (!acc[item.category]) {
+    acc[item.category] = [];
+  }
+  acc[item.category].push({ id: item.id, name: item.name }); // Store both id and name
+  return acc;
+}, {});
 
 export const weeklyPlan = [
   {

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Box,
@@ -7,10 +8,17 @@ import {
   ThemeIcon,
   Avatar,
   Menu,
+  Button,
   UnstyledButton,
   Stack,
   rem,
+  Indicator,
+  Popover,
+  ScrollArea,
+  ActionIcon,
+  Divider,
 } from "@mantine/core";
+import { Notifications } from "@mantine/notifications";
 import {
   LayoutDashboard,
   CalendarRange,
@@ -20,10 +28,12 @@ import {
   Settings,
   Dumbbell,
   ChevronDown,
+  Bell,
+  Heart as HeartIcon,
+  MessageCircle,
 } from "lucide-react";
-import { mockUser } from "@/lib/mock-data";
+import { supabase } from "@/lib/supabase";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { useTheme } from "@/lib/theme";
 
 const nav = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -33,13 +43,96 @@ const nav = [
 ];
 
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [unreadNotifs, setUnreadNotifs] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
   const path = location.pathname;
   const accentFilled = "var(--mantine-color-primary-filled)";
 
+  useEffect(() => {
+    const getSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) return navigate("/");
+      setUser(session.user);
+
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .single();
+
+      if (!profileData && path !== "/onboarding") {
+        navigate("/onboarding");
+      } else {
+        setProfile(profileData);
+        fetchNotifications(session.user.id);
+      }
+    };
+
+    getSession();
+  }, [navigate, path]);
+
+  const fetchNotifications = async (userId) => {
+    const [reactionsRes, notesRes] = await Promise.all([
+      supabase
+        .from("partner_reactions")
+        .select("*")
+        .eq("recipient_id", userId)
+        .eq("seen", false)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("partner_notes")
+        .select("*")
+        .eq("recipient_id", userId)
+        .eq("seen", false)
+        .order("created_at", { ascending: false })
+    ]);
+
+    const reactions = (reactionsRes.data || []).map(r => ({
+      id: r.id,
+      type: 'reaction',
+      content: r.message || 'Sent a heart!',
+      created_at: r.created_at
+    }));
+
+    const notes = (notesRes.data || []).map(n => ({
+      id: n.id,
+      type: 'note',
+      content: n.content,
+      created_at: n.created_at
+    }));
+
+    setUnreadNotifs([...reactions, ...notes].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+  };
+
+  const markAllRead = async () => {
+    if (!user) return;
+    await Promise.all([
+      supabase
+        .from("partner_reactions")
+        .update({ seen: true })
+        .eq("recipient_id", user.id),
+      supabase
+        .from("partner_notes")
+        .update({ seen: true })
+        .eq("recipient_id", user.id)
+    ]);
+    setUnreadNotifs([]);
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate("/");
+  };
+
   return (
     <Box className="bg-hero" style={{ minHeight: "100vh" }}>
+      <Notifications position="top-right" zIndex={2000} />
+      
       <Box
         component="header"
         className="glass-strong"
@@ -66,6 +159,59 @@ export default function App() {
 
             <Group gap="md">
               <ThemeToggle />
+              
+              <Popover width={300} position="bottom-end" shadow="md">
+                <Popover.Target>
+                  <Indicator label={unreadNotifs.length} size={16} disabled={unreadNotifs.length === 0} color="red" withBorder offset={4}>
+                    <ActionIcon variant="subtle" color="gray" radius="xl" size="lg">
+                      <Bell size={20} />
+                    </ActionIcon>
+                  </Indicator>
+                </Popover.Target>
+                <Popover.Dropdown className="glass-strong" p="xs">
+                  <Group justify="space-between" mb="xs" px="xs" pt="xs">
+                    <Text fw={700} size="sm">Notifications</Text>
+                    {unreadNotifs.length > 0 && (
+                      <Button variant="subtle" size="compact-xs" onClick={markAllRead}>Clear All</Button>
+                    )}
+                  </Group>
+                  <Divider mb="xs" opacity={0.3} />
+                  <ScrollArea.Autosize maxHeight={300}>
+                    {unreadNotifs.length === 0 ? (
+                      <Text size="xs" c="dimmed" ta="center" py="xl">No new notifications</Text>
+                    ) : (
+                      <Stack gap={4}>
+                        {unreadNotifs.map((n) => (
+                          <UnstyledButton 
+                            key={n.id} 
+                            p="xs" 
+                            className="glass" 
+                            style={{ borderRadius: '8px' }}
+                          >
+                            <Group wrap="nowrap" gap="sm">
+                              <ThemeIcon 
+                                size="sm" 
+                                variant="light" 
+                                color={n.type === 'reaction' ? "pink" : "blue"} 
+                                radius="xl"
+                              >
+                                {n.type === 'reaction' ? <HeartIcon size={12} fill="currentColor" /> : <MessageCircle size={12} />}
+                              </ThemeIcon>
+                              <Box style={{ flex: 1 }}>
+                                <Text size="xs" fw={500}>{n.content}</Text>
+                                <Text size="10px" c="dimmed">
+                                  {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </Text>
+                              </Box>
+                            </Group>
+                          </UnstyledButton>
+                        ))}
+                      </Stack>
+                    )}
+                  </ScrollArea.Autosize>
+                </Popover.Dropdown>
+              </Popover>
+
               <Menu shadow="md" width={200} position="bottom-end">
                 <Menu.Target>
                   <UnstyledButton
@@ -78,11 +224,16 @@ export default function App() {
                       padding: `${rem(4)} ${rem(12)} ${rem(4)} ${rem(4)}`,
                     }}
                   >
-                    <Avatar color="primary" radius="xl" size="sm">
-                      {mockUser.initials}
+                    <Avatar
+                      color="primary"
+                      radius="xl"
+                      size="sm"
+                      src={user?.user_metadata?.avatar_url}
+                    >
+                      {profile?.name?.charAt(0) || user?.email?.charAt(0)}
                     </Avatar>
                     <Text size="sm" fw={500} visibleFrom="md">
-                      {mockUser.name}
+                      {profile?.name || "User"}
                     </Text>
                     <ChevronDown
                       size={16}
@@ -100,7 +251,7 @@ export default function App() {
                   </Menu.Item>
                   <Menu.Item
                     leftSection={<Settings size={16} />}
-                    onClick={() => navigate("/profile")}
+                    onClick={() => navigate("/settings")}
                   >
                     Settings
                   </Menu.Item>
@@ -108,7 +259,7 @@ export default function App() {
                   <Menu.Item
                     color="red"
                     leftSection={<LogOut size={16} />}
-                    onClick={() => navigate("/")}
+                    onClick={handleSignOut}
                   >
                     Sign out
                   </Menu.Item>
@@ -156,7 +307,7 @@ export default function App() {
                       color: active
                         ? "var(--mantine-color-primary-light-color)"
                         : "var(--mantine-color-text)",
-                      boxShadow:  active ? "var(--shadow-glow)" : "none",
+                      boxShadow: active ? "var(--shadow-glow)" : "none",
                       transition: "all 0.2s ease",
                     }}
                   >

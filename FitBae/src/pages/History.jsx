@@ -1,4 +1,5 @@
-import { planHistory } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Stack,
   Title,
@@ -9,11 +10,47 @@ import {
   Button,
   Group,
   Box,
+  Loader,
+  Center,
 } from "@mantine/core";
 import { FileText, Calendar, Sparkles } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export default function HistoryPage() {
-  const empty = false;
+  const navigate = useNavigate();
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const fetchHistory = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session) {
+        const { data } = await supabase
+          .from("workout_sessions")
+          .select("*")
+          .eq("user_id", session.user.id)
+          .order("started_at", { ascending: false });
+        setHistory(data || []);
+      }
+      setLoading(false);
+    };
+    fetchHistory();
+  }, []);
+
+  const formatDuration = (s) => {
+    const mins = Math.floor(s / 60);
+    return mins > 0 ? `${mins}m` : `${s}s`;
+  };
+
+  if (loading)
+    return (
+      <Center h="50vh">
+        <Loader />
+      </Center>
+    );
+
+  const empty = history.length === 0;
 
   return (
     <Stack gap="xl">
@@ -33,25 +70,31 @@ export default function HistoryPage() {
               <Sparkles size={32} />
             </ThemeIcon>
             <Box ta="center">
-              <Title order={3}>No plans yet</Title>
+              <Title order={3}>No workouts yet</Title>
               <Text c="dimmed" size="sm" mt={4}>
-                Generate your first one!
+                Start your first session from the dashboard!
               </Text>
             </Box>
-            <Button radius="xl" size="md" mt="md">
-              Generate Plan
+            <Button
+              radius="xl"
+              size="md"
+              mt="md"
+              onClick={() => navigate("/dashboard")}
+            >
+              Go to Dashboard
             </Button>
           </Stack>
         </Paper>
       ) : (
         <Stack gap="sm">
-          {planHistory.map((p) => (
+          {history.map((p) => (
             <Paper
               key={p.id}
               className="glass"
               radius="xl"
+              onClick={() => navigate(`/history/${p.id}`)}
               p={{ base: "md", sm: "lg" }}
-              style={{ transition: "transform 0.2s ease" }}
+              style={{ transition: "all 0.2s ease", cursor: "pointer" }}
             >
               <Group justify="space-between" align="center" wrap="nowrap">
                 <Group
@@ -76,7 +119,7 @@ export default function HistoryPage() {
                         size="xs"
                         style={{ flexShrink: 0 }}
                       >
-                        {p.goal}
+                        {p.workout_type}
                       </Badge>
                       <Group gap={4} visibleFrom="xs" wrap="nowrap">
                         <Calendar
@@ -84,27 +127,24 @@ export default function HistoryPage() {
                           color="var(--mantine-color-dimmed)"
                         />
                         <Text c="dimmed" size="xs" truncate>
-                          {p.date}
+                          {new Date(p.started_at).toLocaleDateString()}
                         </Text>
                       </Group>
                     </Group>
                     <Text size="sm" fw={500} truncate="end">
-                      {p.summary}
+                      {p.focus}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Duration: {formatDuration(p.duration_seconds || 0)}
                     </Text>
                     <Text c="dimmed" size="xs" hiddenFrom="xs" mt={2}>
-                      {p.date}
+                      {new Date(p.started_at).toLocaleDateString()}
                     </Text>
                   </Box>
                 </Group>
-                <Button
-                  variant="outline"
-                  radius="xl"
-                  size="sm"
-                  ml="xs"
-                  style={{ flexShrink: 0 }}
-                >
-                  View
-                </Button>
+                <Badge color={p.status === "completed" ? "green" : "gray"}>
+                  {p.status}
+                </Badge>
               </Group>
             </Paper>
           ))}
