@@ -68,9 +68,9 @@ export function ThemeProvider({ children }) {
           },
           primaryShade: 6,
           defaultRadius: "xl",
-          fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+          fontFamily: "Outfit, ui-sans-serif, system-ui, sans-serif",
           headings: {
-            fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+            fontFamily: "Outfit, ui-sans-serif, system-ui, sans-serif",
             fontWeight: "700",
           },
           components: {

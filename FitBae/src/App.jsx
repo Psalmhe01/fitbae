@@ -76,6 +76,54 @@ export default function App() {
     getSession();
   }, [navigate, path]);
 
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel('global_notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'partner_reactions',
+          filter: `recipient_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const newNotif = {
+            id: payload.new.id,
+            type: 'reaction',
+            content: payload.new.message || 'Sent a heart!',
+            created_at: payload.new.created_at
+          };
+          setUnreadNotifs(prev => [newNotif, ...prev]);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'partner_notes',
+          filter: `recipient_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const newNotif = {
+            id: payload.new.id,
+            type: 'note',
+            content: payload.new.content,
+            created_at: payload.new.created_at
+          };
+          setUnreadNotifs(prev => [newNotif, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
   const fetchNotifications = async (userId) => {
     const [reactionsRes, notesRes] = await Promise.all([
       supabase

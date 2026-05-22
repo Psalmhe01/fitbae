@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Dumbbell, Sparkles, Users, LineChart, Mail } from "lucide-react";
+import { Dumbbell, Sparkles, Users, LineChart } from "lucide-react";
 import {
   Button,
   Container,
@@ -133,16 +133,6 @@ export default function LandingPage() {
                   fw={600}
                 >
                   Sign in with Google
-                </Button>
-                <Button
-                  component={Link}
-                  to="/onboarding"
-                  variant="subtle"
-                  color="gray"
-                  leftSection={<Mail size={16} />}
-                  fullWidth
-                >
-                  Sign in with email
                 </Button>
               </Stack>
             </Stack>

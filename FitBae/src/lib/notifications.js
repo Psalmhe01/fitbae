@@ -9,12 +9,23 @@ export const requestPermission = async () => {
 
 export const notifyRestComplete = () => {
   // 1. System Notification
-  if ("Notification" in window && Notification.permission === "granted") {
-    new Notification("Rest Period Over!", {
-      body: "Time to start your next set! Let's go.",
-      icon: "/favicon.ico", // Path to your app icon
-      silent: false,
-    });
+  try {
+    if (
+      typeof window !== "undefined" &&
+      "Notification" in window &&
+      Notification.permission === "granted"
+    ) {
+      new Notification("Rest Period Over!", {
+        body: "Time to start your next set! Let's go.",
+        icon: "/favicon.ico",
+        silent: false,
+      });
+    }
+  } catch (err) {
+    console.warn(
+      "System notification failed (standard behavior on some mobile browsers):",
+      err,
+    );
   }
 
   // 2. Audio Fallback (Crucial for mobile/inactive tabs)
@@ -23,7 +34,10 @@ export const notifyRestComplete = () => {
 
 const playNotificationSound = () => {
   try {
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const audioCtx = new AudioContextClass();
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
 

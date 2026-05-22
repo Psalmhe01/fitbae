@@ -305,21 +305,21 @@ export default function ProfilePage() {
     setSendingNote(true);
     const { data: { session } } = await supabase.auth.getSession();
     
-    const { error } = await supabase.from("partner_notes").insert({
+    const { data, error } = await supabase.from("partner_notes").insert({
       author_id: session.user.id,
       recipient_id: partnerProfile.user_id,
       content: noteContent
-    });
+    }).select().single();
 
     setSendingNote(false);
-    if (!error) {
+    if (!error && data) {
       notifications.show({ title: "Note sent!", color: "green" });
+      // Add the new note to local state immediately for the sender
+      setNotes(prev => [data, ...prev].slice(0, 10));
       setNoteContent("");
-      window.location.reload(); // Refresh to show new note
       closeNote();
     }
   };
-
   if (loading)
     return (
       <Center h="50vh">
