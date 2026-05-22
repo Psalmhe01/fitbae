@@ -16,6 +16,22 @@ import {
 import { FileText, Calendar, Sparkles } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
+// Helper to format date in MM/DD hh:mm AM/PM CST
+const formatCST = (dateString) => {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/Chicago',
+  }).formatToParts(date);
+  const p = parts.reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
+  return `${p.month}/${p.day} ${p.hour}:${p.minute} ${p.dayPeriod}`;
+};
+
 export default function HistoryPage() {
   const navigate = useNavigate();
   const [history, setHistory] = useState([]);
@@ -127,7 +143,7 @@ export default function HistoryPage() {
                           color="var(--mantine-color-dimmed)"
                         />
                         <Text c="dimmed" size="xs" truncate>
-                          {new Date(p.started_at).toLocaleDateString()}
+                          {formatCST(p.finished_at || p.started_at)}
                         </Text>
                       </Group>
                     </Group>
@@ -138,7 +154,7 @@ export default function HistoryPage() {
                       Duration: {formatDuration(p.duration_seconds || 0)}
                     </Text>
                     <Text c="dimmed" size="xs" hiddenFrom="xs" mt={2}>
-                      {new Date(p.started_at).toLocaleDateString()}
+                      {formatCST(p.finished_at || p.started_at)}
                     </Text>
                   </Box>
                 </Group>

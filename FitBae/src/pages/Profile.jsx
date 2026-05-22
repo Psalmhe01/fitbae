@@ -47,14 +47,18 @@ import { requestPermission } from "@/lib/notifications";
 
 // Helper to format date in MM/DD hh:mm AM/PM CST
 const formatCST = (dateString) => {
-  return new Intl.DateTimeFormat('en-US', {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  const parts = new Intl.DateTimeFormat('en-US', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
     timeZone: 'America/Chicago',
-  }).format(new Date(dateString)).replace(',', '');
+  }).formatToParts(date);
+  const p = parts.reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
+  return `${p.month}/${p.day} ${p.hour}:${p.minute} ${p.dayPeriod}`;
 };
 
 export default function ProfilePage() {
@@ -137,19 +141,18 @@ export default function ProfilePage() {
         }
 
         if (chartRes.data) {
+          const chicagoDateFormatter = new Intl.DateTimeFormat('en-CA', { 
+            timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' 
+          });
           const days = [];
           for (let i = 6; i >= 0; i--) {
-            const date = new Date();
+            const date = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Chicago" }));
             date.setDate(date.getDate() - i);
-            const dateString = date.toLocaleDateString("en-CA"); // YYYY-MM-DD format
-            const dayName = date.toLocaleDateString("en-US", {
-              weekday: "short",
-            });
+            const dateString = chicagoDateFormatter.format(date);
+            const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
 
             const sessionsOnDay = chartRes.data.filter(
-              (s) =>
-                new Date(s.finished_at).toLocaleDateString("en-CA") ===
-                dateString
+              (s) => chicagoDateFormatter.format(new Date(s.finished_at)) === dateString
             );
 
             const totalWeight = sessionsOnDay.reduce((daySum, session) => {
@@ -632,8 +635,7 @@ export default function ProfilePage() {
                         {p.workout_type}: {p.focus}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        {new Date(p.started_at).toLocaleDateString()} •{" "}
-                        {formatDuration(p.duration_seconds || 0)}
+                        {formatCST(p.finished_at || p.started_at)} • {formatDuration(p.duration_seconds || 0)}
                       </Text>
                     </Box>
                   </Group>

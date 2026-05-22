@@ -20,6 +20,22 @@ import { ArrowLeft, Calendar, Clock, Dumbbell, Activity } from "lucide-react";
 import { getEquipmentById } from "@/lib/equipmentLibrary";
 import { supabase } from "@/lib/supabase";
 
+// Helper to format date in MM/DD hh:mm AM/PM CST
+const formatCST = (dateString) => {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/Chicago',
+  }).formatToParts(date);
+  const p = parts.reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
+  return `${p.month}/${p.day} ${p.hour}:${p.minute} ${p.dayPeriod}`;
+};
+
 export default function SessionDetailPage() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
@@ -103,7 +119,7 @@ export default function SessionDetailPage() {
               </Text>
             </Group>
             <Text fw={600}>
-              {new Date(session.started_at).toLocaleDateString()}
+              {formatCST(session.finished_at || session.started_at)}
             </Text>
           </Box>
           <Box>

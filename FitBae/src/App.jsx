@@ -44,14 +44,18 @@ const nav = [
 
 // Helper to format date in MM/DD hh:mm AM/PM CST
 const formatCST = (dateString) => {
-  return new Intl.DateTimeFormat('en-US', {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  const parts = new Intl.DateTimeFormat('en-US', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
     timeZone: 'America/Chicago',
-  }).format(new Date(dateString)).replace(',', '');
+  }).formatToParts(date);
+  const p = parts.reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
+  return `${p.month}/${p.day} ${p.hour}:${p.minute} ${p.dayPeriod}`;
 };
 
 export default function App() {
