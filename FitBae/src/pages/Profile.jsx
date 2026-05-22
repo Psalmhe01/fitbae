@@ -45,6 +45,18 @@ import {
 import { supabase } from "@/lib/supabase";
 import { requestPermission } from "@/lib/notifications";
 
+// Helper to format date in MM/DD hh:mm AM/PM CST
+const formatCST = (dateString) => {
+  return new Intl.DateTimeFormat('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/Chicago',
+  }).format(new Date(dateString)).replace(',', '');
+};
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState(null);
   const [partnership, setPartnership] = useState(null);
@@ -518,9 +530,7 @@ export default function ProfilePage() {
                   {note.author_id === profile.user_id ? profile.name : (partnerProfile?.name || "Partner")}
                 </Text>
                 <Text size="sm">{note.content}</Text>
-                <Text size="xs" c="dimmed" ta="right" mt={4}>
-                  {new Date(note.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </Text>
+                <Text size="xs" c="dimmed" ta="right" mt={4}>{formatCST(note.created_at)}</Text>
               </Box>
             ))}
           </Stack>

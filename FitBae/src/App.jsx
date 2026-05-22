@@ -42,6 +42,18 @@ const nav = [
   { to: "/profile", label: "Profile", icon: User },
 ];
 
+// Helper to format date in MM/DD hh:mm AM/PM CST
+const formatCST = (dateString) => {
+  return new Intl.DateTimeFormat('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/Chicago',
+  }).format(new Date(dateString)).replace(',', '');
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -247,9 +259,7 @@ export default function App() {
                               </ThemeIcon>
                               <Box style={{ flex: 1 }}>
                                 <Text size="xs" fw={500}>{n.content}</Text>
-                                <Text size="10px" c="dimmed">
-                                  {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </Text>
+                                <Text size="10px" c="dimmed">{formatCST(n.created_at)}</Text>
                               </Box>
                             </Group>
                           </UnstyledButton>
