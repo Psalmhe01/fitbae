@@ -1,174 +1,84 @@
-import { createContext, useContext, useEffect, useState } from "react";
-import { MantineProvider, createTheme, rem } from "@mantine/core";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { MantineProvider, createTheme } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 
-const ThemeContext = createContext({
-  accent: "blue",
-  setAccent: () => {},
-  toggle: () => {},
-});
+const ThemeContext = createContext({ colorScheme: "light", toggleColorScheme: () => {} });
+
+const brand = [
+  "#f6ffd9", "#edffad", "#e4ff7f", "#dcff5b", "#d7ff46",
+  "#c8ef36", "#b5da29", "#91af1f", "#718a19", "#526612",
+];
 
 export function ThemeProvider({ children }) {
-  const [accent, setAccent] = useState("blue");
+  const [colorScheme, setColorScheme] = useState(() => {
+    if (typeof window === "undefined") return "light";
+    const stored = localStorage.getItem("fitbae-color-scheme");
+    if (stored === "light" || stored === "dark") return stored;
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
 
   useEffect(() => {
-    const stored =
-      typeof window !== "undefined"
-        ? localStorage.getItem("fitbae-accent")
-        : null;
-    if (stored === "blue" || stored === "purple") {
-      setAccent(stored);
-    }
-  }, []);
+    document.documentElement.dataset.theme = colorScheme;
+    document.documentElement.style.colorScheme = colorScheme;
+    localStorage.setItem("fitbae-color-scheme", colorScheme);
+  }, [colorScheme]);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.remove("theme-blue", "theme-purple");
-    root.classList.add(accent === "purple" ? "theme-purple" : "theme-blue");
-    localStorage.setItem("fitbae-accent", accent);
-  }, [accent]);
+  const value = useMemo(() => ({
+    colorScheme,
+    toggleColorScheme: () => setColorScheme((current) => current === "dark" ? "light" : "dark"),
+  }), [colorScheme]);
+
+  const theme = useMemo(() => createTheme({
+    primaryColor: "brand",
+    primaryShade: 6,
+    autoContrast: true,
+    luminanceThreshold: 0.32,
+    colors: { brand },
+    defaultRadius: "md",
+    fontFamily: '"Aptos", "Segoe UI Variable", "Segoe UI", Helvetica, Arial, sans-serif',
+    headings: {
+      fontFamily: '"Arial Narrow", "Aptos Display", "Segoe UI Variable Display", sans-serif',
+      fontWeight: "760",
+    },
+    components: {
+      Button: {
+        defaultProps: { radius: "md" },
+        styles: { root: { fontWeight: 720, letterSpacing: "-0.01em" } },
+      },
+      Paper: { defaultProps: { radius: "lg" } },
+      TextInput: {
+        defaultProps: { radius: "md", size: "md" },
+        styles: { input: { background: "var(--surface)", borderColor: "var(--line)" } },
+      },
+      Textarea: {
+        defaultProps: { radius: "md", size: "md" },
+        styles: { input: { background: "var(--surface)", borderColor: "var(--line)" } },
+      },
+      NumberInput: {
+        defaultProps: { radius: "md", size: "md" },
+        styles: { input: { background: "var(--surface)", borderColor: "var(--line)" } },
+      },
+      SegmentedControl: {
+        defaultProps: { radius: "md" },
+        styles: {
+          root: { background: "var(--surface-muted)" },
+          indicator: { background: "var(--surface)", border: "1px solid var(--line)", boxShadow: "var(--shadow-xs)" },
+        },
+      },
+      Modal: {
+        defaultProps: { radius: "lg", centered: true },
+        styles: { content: { background: "var(--surface-raised)" }, header: { background: "var(--surface-raised)" } },
+      },
+      Drawer: {
+        styles: { content: { background: "var(--surface-raised)" }, header: { background: "var(--surface-raised)" } },
+      },
+    },
+  }), []);
 
   return (
-    <ThemeContext.Provider
-      value={{
-        accent,
-        setAccent,
-        toggle: () =>
-          setAccent((current) => (current === "blue" ? "purple" : "blue")),
-      }}
-    >
-      <MantineProvider
-        theme={createTheme({
-          primaryColor: accent,
-          colors: {
-            purple: [
-              "#f3f0ff",
-              "#e5dbff",
-              "#d0bfff",
-              "#b197fc",
-              "#9775fa",
-              "#845ef7",
-              "#7950f2", // Replaced var(--primary) with valid hex
-              "#7048e8",
-              "#6741d9",
-              "#5f3dc4",
-            ],
-            blue: [
-              "#e7f5ff",
-              "#d0ebff",
-              "#a5d8ff",
-              "#74c0fc",
-              "#4dabf7",
-              "#339af0",
-              "#228be6", // Replaced var(--primary) with valid hex
-              "#1c7ed6",
-              "#1971c2",
-              "#1864ab",
-            ],
-          },
-          primaryShade: 6,
-          defaultRadius: "xl",
-          fontFamily: "Outfit, ui-sans-serif, system-ui, sans-serif",
-          headings: {
-            fontFamily: "Outfit, ui-sans-serif, system-ui, sans-serif",
-            fontWeight: "700",
-          },
-          components: {
-            Paper: {
-              defaultProps: {
-                radius: "32px",
-                withBorder: false,
-              },
-            },
-            TextInput: {
-              defaultProps: {
-                radius: "md",
-                size: "md",
-              },
-              styles: {
-                input: {
-                  backgroundColor: "rgba(0, 0, 0, 0.15)",
-                  backdropFilter: "blur(4px)",
-                  border: "1px solid var(--border)",
-                  transition: "border-color 0.2s ease",
-                },
-              },
-            },
-            NumberInput: {
-              defaultProps: {
-                radius: "md",
-                size: "md",
-              },
-              styles: {
-                input: {
-                  backgroundColor: "rgba(0, 0, 0, 0.15)",
-                  backdropFilter: "blur(4px)",
-                  border: "1px solid var(--border)",
-                },
-              },
-            },
-            SegmentedControl: {
-              defaultProps: {
-                color: accent,
-                radius: "xl",
-              },
-              styles: {
-                root: {
-                  backgroundColor: "rgba(0, 0, 0, 0.2)",
-                  backdropFilter: "blur(8px)",
-                  border: "1px solid var(--border)",
-                },
-                indicator: {
-                  boxShadow: "var(--shadow-glow)",
-                },
-              },
-            },
-            Slider: {
-              defaultProps: {
-                color: accent,
-                size: "md",
-                radius: "xl",
-              },
-              styles: {
-                track: {
-                  height: rem(6),
-                  backgroundColor:
-                    "color-mix(in oklab, var(--primary), transparent 80%)",
-                },
-                bar: {
-                  backgroundColor: "var(--primary)",
-                },
-                thumb: {
-                  height: rem(16),
-                  width: rem(16),
-                  backgroundColor: "var(--background)",
-                  border:
-                    "1px solid color-mix(in oklab, var(--primary), transparent 50%)",
-                  boxShadow: "var(--shadow)",
-                },
-              },
-            },
-            Chip: {
-              defaultProps: {
-                color: accent,
-                variant: "filled",
-                radius: "xl",
-              },
-            },
-            Button: {
-              defaultProps: {
-                radius: "xl",
-              },
-            },
-          },
-          other: {
-            // This allows us to use these as variables if needed,
-            // though keeping them in index.css is also fine.
-          },
-        })}
-        forceColorScheme="dark"
-      >
-        <Notifications />
+    <ThemeContext.Provider value={value}>
+      <MantineProvider theme={theme} forceColorScheme={colorScheme}>
+        <Notifications position="top-right" zIndex={3000} />
         {children}
       </MantineProvider>
     </ThemeContext.Provider>

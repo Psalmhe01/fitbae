@@ -1,5 +1,11 @@
 export const equipmentLibrary = [
   {
+    id: "bodyweight",
+    name: "Bodyweight / Floor Space",
+    image_url: null,
+    category: "Bodyweight",
+  },
+  {
     id: "olympic_barbell",
     name: "Olympic Barbell",
     image_url: "https://images.pexels.com/photos/703014/pexels-photo-703014.jpeg",
@@ -68,7 +74,7 @@ export const equipmentLibrary = [
   {
     id: "hack_squat_machine",
     name: "Hack Squat Machine",
-    image_url: "https://unsplash.com/photos/a-man-sitting-on-a-bench-in-a-gym-C6fJDfsNJtE",
+    image_url: null,
     category: "Machines",
   },
   {
@@ -80,7 +86,7 @@ export const equipmentLibrary = [
   {
     id: "chest_supported_row_machine",
     name: "Chest Supported Row Machine",
-    image_url: "https://i.pinimg.com/originals/9b/20/f1/9b20f131d47aa767e132a78d7c942666.jpg",
+    image_url: null,
     category: "Machines",
   },
   {
@@ -116,7 +122,7 @@ export const equipmentLibrary = [
   {
     id: "adductor_machine",
     name: "Adductor Machine",
-    image_url: "https://tse2.mm.bing.net/th/id/OIP.a3FWhsGwQlfFezPc8VcJHgHaHa?pid=Api&h=220&P=0",
+    image_url: null,
     category: "Machines",
   },
   {
@@ -226,3 +232,11 @@ export const equipmentLibrary = [
 export function getEquipmentById(id) {
   return equipmentLibrary.find(equipment => equipment.id === id);
 }
+
+export const equipmentCategories = Object.freeze(
+  equipmentLibrary.reduce((categories, item) => {
+    const current = categories[item.category] || [];
+    categories[item.category] = [...current, { id: item.id, name: item.name }];
+    return categories;
+  }, {}),
+);

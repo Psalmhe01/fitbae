@@ -1,215 +1,170 @@
-import { Link } from "react-router-dom";
-import { Dumbbell, Sparkles, Users, LineChart } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  Button,
-  Container,
-  Title,
-  Text,
-  Group,
-  Box,
-  Stack,
-  ThemeIcon,
-  SimpleGrid,
-  Paper,
-  rem,
-  Flex,
+  Anchor, Badge, Box, Button, Container, Group, Paper, SimpleGrid,
+  Stack, Text, ThemeIcon, Title, rem,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { ArrowRight, CalendarCheck, HeartHandshake, Repeat2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { BrandMark } from "@/components/BrandMark";
+
+const features = [
+  {
+    icon: CalendarCheck,
+    title: "Plans that line up",
+    text: "Keep your own pace while sharing the days, finishers, and small wins that matter.",
+  },
+  {
+    icon: Repeat2,
+    title: "Swap without starting over",
+    text: "Replace one movement instantly when a machine is busy or an exercise just isn't for you.",
+  },
+  {
+    icon: HeartHandshake,
+    title: "Encouragement, built in",
+    text: "Share progress, leave a note, and make showing up feel like something you do together.",
+  },
+];
 
 export default function LandingPage() {
+  const navigate = useNavigate();
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [signingIn, setSigningIn] = useState(false);
+  const [session, setSession] = useState(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setCheckingSession(false);
+    });
+  }, []);
+
   const handleGoogleLogin = async () => {
+    if (session) return navigate("/dashboard");
+    setSigningIn(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: window.location.origin + "/dashboard" },
+      options: { redirectTo: `${window.location.origin}/dashboard` },
     });
-
     if (error) {
-      console.error("Google Auth error:", error.message);
-      notifications.show({
-        title: "Authentication failed",
-        message: error.message,
-        color: "red",
-      });
+      setSigningIn(false);
+      notifications.show({ title: "We couldn't sign you in", message: error.message, color: "red" });
     }
   };
 
   return (
-    <Box
-      className="bg-hero"
-      style={{
-        minHeight: "100vh",
-        position: "relative",
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      {/* Header */}
-      <Box
-        component="header"
-        style={{ position: "relative", zIndex: 10, flexShrink: 0 }}
-      >
-        <Container size="lg" px="md">
-          <Group justify="space-between" h={rem(80)}>
+    <Box className="bg-hero">
+      <Box component="header" py="lg">
+        <Container size="xl">
+          <Group justify="space-between">
+            <BrandMark />
             <Group gap="xs">
-              <ThemeIcon variant="light" size="lg" radius="xl">
-                <Dumbbell size={20} />
-              </ThemeIcon>
-              <Text size="lg" fw={700} style={{ letterSpacing: "-0.02em" }}>
-                FitBae
-              </Text>
+              <ThemeToggle />
+              <Button
+                variant="subtle"
+                color="gray"
+                onClick={handleGoogleLogin}
+                loading={checkingSession || signingIn}
+                visibleFrom="sm"
+              >
+                {session ? "Open app" : "Sign in"}
+              </Button>
             </Group>
-            <ThemeToggle />
           </Group>
         </Container>
       </Box>
 
-      <Container
-        size="lg"
-        px="md"
-        style={{ flex: 1, display: "flex", alignItems: "center" }}
-      >
-        <Flex
-          direction="column"
-          align="center"
-          justify="center"
-          w="100%"
-          py={64}
-          style={{ position: "relative", zIndex: 10, minHeight: "100%" }}
-        >
-          {/* AI Badge */}
-          <Group
-            gap={6}
-            px={12}
-            py={4}
-            style={{
-              backgroundColor: "var(--mantine-color-primary-light)",
-              color: "var(--mantine-color-primary-filled)",
-              borderRadius: rem(100),
-              border: "1px solid var(--mantine-color-primary-light-hover)",
-            }}
-          >
-            <Sparkles size={14} />
-            <Text size="xs" fw={700} tt="uppercase">
-              Powered by AI
+      <Container size="xl" py={{ base: 28, md: 72 }}>
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing={{ base: 40, md: 64 }} verticalSpacing={40}>
+          <Stack justify="center" gap={0} maw={650}>
+            <Badge variant="outline" color="gray" radius="sm" size="lg" w="fit-content" mb="xl">
+              Training is better together
+            </Badge>
+            <Title order={1} fz={{ base: rem(56), sm: rem(72), lg: rem(88) }} lh={0.92} lts={rem(-4)} maw={620}>
+              Your plan. Their pace. One team.
+            </Title>
+            <Text c="dimmed" fz={{ base: "lg", md: rem(21) }} lh={1.55} mt="xl" maw={560}>
+              FitBae builds flexible training weeks for couples—personal enough to work, shared enough to keep you close.
+            </Text>
+            <Group mt={32} gap="sm">
+              <Button
+                size="xl"
+                color="brand"
+                c="dark.9"
+                rightSection={<ArrowRight size={20} />}
+                onClick={handleGoogleLogin}
+                loading={checkingSession || signingIn}
+              >
+                {session ? "Continue training" : "Build our plan"}
+              </Button>
+              <Anchor href="#how-it-works" c="dimmed" fw={700} px="sm">See how it works</Anchor>
+            </Group>
+            <Text size="xs" c="dimmed" mt="md">Sign in securely with Google. No credit card required.</Text>
+          </Stack>
+
+          <Paper className="hero-photo" radius={{ base: 0, md: "xl" }}>
+            <img
+              src="/images/couple-training-hero.png"
+              alt="A couple supporting each other through a dumbbell workout"
+              width="1536"
+              height="1024"
+              fetchPriority="high"
+            />
+            <Stack className="hero-note" gap={6}>
+              <Text className="eyebrow" c="brand.3">Tuesday · Upper body</Text>
+              <Group justify="space-between" align="flex-end">
+                <Box>
+                  <Text fw={800} fz="xl">Show up for the set.</Text>
+                  <Text c="gray.3" size="sm">Stay for each other.</Text>
+                </Box>
+                <ThemeIcon color="brand" c="dark.9" size={48} radius="xl">
+                  <HeartHandshake size={23} />
+                </ThemeIcon>
+              </Group>
+            </Stack>
+          </Paper>
+        </SimpleGrid>
+      </Container>
+
+      <Box id="how-it-works" py={{ base: 64, md: 96 }}>
+        <Container size="xl">
+          <Group justify="space-between" align="flex-end" mb={36}>
+            <Box>
+              <Text className="eyebrow">Built around real gym days</Text>
+              <Title order={2} fz={{ base: 36, md: 50 }} lts={-2} mt="xs">Less planning. More showing up.</Title>
+            </Box>
+            <Text c="dimmed" maw={410} visibleFrom="md">
+              Smart suggestions stay quietly in the background. You stay in control of every exercise and every session.
             </Text>
           </Group>
 
-          {/* Main Hero Card */}
-          <Paper
-            className="glass shadow-glow"
-            radius="32px"
-            p={{ base: "xl", md: 48 }}
-            mt={24}
-            style={{ maxWidth: rem(600), width: "100%" }}
-          >
-            <Stack gap="lg" align="center">
-              <Title
-                ta="center"
-                order={1}
-                size={rem(48)}
-                fw={800}
-                style={{ lineHeight: 1.1 }}
-              >
-                Your <span className="text-gradient">AI-Powered</span> Workout
-                Partner
-              </Title>
-              <Text c="dimmed" ta="center" size="lg">
-                Personalized workout plans generated by AI, built around your
-                goals and equipment.
-              </Text>
-
-              <Stack gap="sm" w="100%" mt="md">
-                <Button
-                  onClick={handleGoogleLogin}
-                  size="lg"
-                  radius="xl"
-                  variant="white"
-                  color="dark"
-                  leftSection={<GoogleIcon />}
-                  fullWidth
-                  fw={600}
-                >
-                  Sign in with Google
-                </Button>
-              </Stack>
-            </Stack>
-          </Paper>
-
-          {/* Features Grid */}
-          <SimpleGrid
-            cols={{ base: 1, md: 3 }}
-            spacing="md"
-            mt={64}
-            w="100%"
-            style={{ maxWidth: rem(800) }}
-          >
-            <Feature
-              icon={<Sparkles size={20} />}
-              title="AI-Generated Plans"
-              desc="Tailored to your goals"
-            />
-            <Feature
-              icon={<Users size={20} />}
-              title="Multi-User Profiles"
-              desc="One app, whole family"
-            />
-            <Feature
-              icon={<LineChart size={20} />}
-              title="Track Your Progress"
-              desc="See every PR you hit"
-            />
+          <SimpleGrid cols={{ base: 1, md: 3 }} spacing="lg">
+            {features.map(({ icon: Icon, title, text }, index) => (
+              <Paper key={title} className="surface" p="xl" mih={220}>
+                <Group justify="space-between" align="flex-start">
+                  <ThemeIcon variant="light" color={index === 2 ? "orange" : "brand"} size={48} radius="md">
+                    <Icon size={23} />
+                  </ThemeIcon>
+                  <Text className="eyebrow">0{index + 1}</Text>
+                </Group>
+                <Title order={3} fz="xl" mt={32}>{title}</Title>
+                <Text c="dimmed" mt="sm" lh={1.55}>{text}</Text>
+              </Paper>
+            ))}
           </SimpleGrid>
-        </Flex>
-      </Container>
-    </Box>
-  );
-}
-
-function Feature({ icon, title, desc }) {
-  return (
-    <Group wrap="nowrap" className="glass" p="md" radius="xl" gap="md">
-      <ThemeIcon
-        variant="light"
-        size={rem(40)}
-        radius="md"
-        style={{ flexShrink: 0 }}
-      >
-        {icon}
-      </ThemeIcon>
-      <Box>
-        <Text size="sm" fw={700}>
-          {title}
-        </Text>
-        <Text c="dimmed" size="xs">
-          {desc}
-        </Text>
+        </Container>
       </Box>
-    </Group>
-  );
-}
 
-function GoogleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24">
-      <path
-        fill="#4285F4"
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-      />
-      <path
-        fill="#34A853"
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-      />
-      <path
-        fill="#EA4335"
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-      />
-    </svg>
+      <Box component="footer" py="xl" style={{ borderTop: "1px solid var(--line)" }}>
+        <Container size="xl">
+          <Group justify="space-between">
+            <BrandMark />
+            <Text size="sm" c="dimmed">Move well. Stay close.</Text>
+          </Group>
+        </Container>
+      </Box>
+    </Box>
   );
 }

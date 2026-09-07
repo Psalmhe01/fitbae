@@ -1,435 +1,346 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "@/lib/supabase";
-import { notifications } from "@mantine/notifications";
-import { generateWorkoutPlan } from "@/lib/gemini";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import {
-  Stack,
-  Paper,
-  Title,
-  Text,
-  SimpleGrid,
-  Group,
-  Button,
-  Badge,
-  Progress,
-  ScrollArea,
-  Drawer,
-  ThemeIcon,
-  Box,
-  rem,
-  UnstyledButton,
-  Loader,
-  Image,
+  Alert, Badge, Box, Button, Center, Group, Loader, Modal, Paper,
+  Progress, SimpleGrid, Stack, Text, ThemeIcon, Title, UnstyledButton,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { notifications } from "@mantine/notifications";
 import {
-  RefreshCw,
-  Calendar,
-  Target,
-  Award,
-  Clock,
-  Dumbbell,
-  Coffee,
+  ArrowRight, CalendarDays, Check, CircleAlert, Clock3, Dumbbell,
+  Flame, Heart, RefreshCw, RotateCcw, Settings2, Sparkles,
 } from "lucide-react";
-import { getEquipmentById } from "@/lib/equipmentLibrary";
+import { isMissingDatabaseFunction, supabase } from "@/lib/supabase";
+import { generateWorkoutPlan } from "@/lib/gemini";
+import { normalizeAndValidateWorkoutPlan } from "@/lib/workoutPlan";
 
-function Dashboard() {
+const ACTIVE_DRAFT_KEY = "fitbae-active-workout";
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function startOfLocalWeek() {
+  const date = new Date();
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function getStoredDraft(userId) {
+  try {
+    const draft = JSON.parse(localStorage.getItem(ACTIVE_DRAFT_KEY));
+    return draft?.userId === userId && draft?.workout ? draft : null;
+  } catch {
+    return null;
+  }
+}
+
+export default function Dashboard() {
   const navigate = useNavigate();
-  const [profile, setProfile] = useState(null);
-  const [plan, setPlan] = useState([]);
-  const [planId, setPlanId] = useState(null);
+  const location = useLocation();
+  const { profile, session } = useOutletContext();
+  const [planRecord, setPlanRecord] = useState(null);
+  const [completedDays, setCompletedDays] = useState(new Set());
+  const [weekSessions, setWeekSessions] = useState([]);
+  const [partner, setPartner] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [completedCount, setCompletedCount] = useState(0);
+  const [error, setError] = useState("");
   const [regenerating, setRegenerating] = useState(false);
-  const [opened, { open: openDrawer, close: closeDrawer }] =
-    useDisclosure(false);
-  const [selectedDay, setSelectedDay] = useState(null);
+  const [confirmRegenerate, setConfirmRegenerate] = useState(() => Boolean(location.state?.openRegenerate));
+  const [pendingWorkout, setPendingWorkout] = useState(null);
+  const [draft, setDraft] = useState(() => getStoredDraft(session?.user?.id));
+
+  const loadDashboard = useCallback(async () => {
+    if (!session?.user?.id) return;
+    setLoading(true);
+    setError("");
+    const { data: latestPlan, error: planError } = await supabase
+      .from("workout_plans").select("*").eq("user_id", session.user.id)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+    if (planError) {
+      setError("Your training plan couldn't be loaded. Try again in a moment.");
+      setLoading(false);
+      return;
+    }
+
+    let normalizedRecord = latestPlan;
+    if (latestPlan?.plan_json) {
+      const result = normalizeAndValidateWorkoutPlan(latestPlan.plan_json, {
+        selectedEquipment: profile?.equipment,
+        expectedFrequency: profile?.gym_frequency,
+      });
+      normalizedRecord = { ...latestPlan, plan_json: result.plan, planWarnings: result.warnings };
+    }
+    setPlanRecord(normalizedRecord);
+
+    const requests = [];
+    if (latestPlan?.id) {
+      requests.push(
+        supabase.from("workout_sessions").select("id,day,workout_type,duration_seconds,finished_at,status")
+          .eq("user_id", session.user.id).eq("plan_id", latestPlan.id)
+          .eq("status", "completed").gte("finished_at", startOfLocalWeek().toISOString()),
+      );
+    } else {
+      requests.push(Promise.resolve({ data: [], error: null }));
+    }
+    requests.push(
+      supabase.from("partnerships").select("*")
+        .or(`requester_id.eq.${session.user.id},recipient_id.eq.${session.user.id}`)
+        .eq("status", "accepted").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    );
+    const [sessionsResult, partnershipResult] = await Promise.all(requests);
+    const sessions = sessionsResult.data || [];
+    setWeekSessions(sessions);
+    setCompletedDays(new Set(sessions.map((item) => item.day).filter(Boolean)));
+
+    if (partnershipResult.data) {
+      const partnerId = partnershipResult.data.requester_id === session.user.id
+        ? partnershipResult.data.recipient_id : partnershipResult.data.requester_id;
+      const sharedProfile = await supabase.rpc("get_connected_partner");
+      let partnerProfile = sharedProfile.data?.[0] || null;
+      if (sharedProfile.error && isMissingDatabaseFunction(sharedProfile.error, "get_connected_partner")) {
+        const legacyProfile = await supabase.from("profiles")
+          .select("user_id,name,gym_frequency,fitness_goal").eq("user_id", partnerId).maybeSingle();
+        partnerProfile = legacyProfile.data || null;
+      }
+      setPartner(partnerProfile || { user_id: partnerId, name: "Your partner" });
+    } else {
+      setPartner(null);
+    }
+    setDraft(getStoredDraft(session.user.id));
+    setLoading(false);
+  }, [profile?.equipment, profile?.gym_frequency, session?.user?.id]);
+
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) return navigate("/");
+    if (!location.state?.openRegenerate) return;
+    setConfirmRegenerate(true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state?.openRegenerate, navigate]);
 
-      const [profileRes, planRes, logsRes] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .single(),
-        supabase
-          .from("workout_plans")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single(),
-        supabase
-          .from("workout_sessions")
-          .select("*", { count: 'exact' })
-          .eq("user_id", session.user.id)
-          .eq("status", "completed")
-          .gte("finished_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
-      ]);
+  const schedule = planRecord?.plan_json?.weekly_schedule || [];
+  const activeDays = schedule.filter((day) => !day.rest);
+  const progress = activeDays.length
+    ? Math.min(100, (completedDays.size / activeDays.length) * 100)
+    : 0;
 
-      if (profileRes.data) setProfile(profileRes.data);
-      if (planRes.data) {
-        setPlan(planRes.data.plan_json.weekly_schedule || []);
-        setCompletedCount(logsRes.count || 0);
-        setPlanId(planRes.data.id);
-      }
-      setLoading(false);
-    };
-    fetchData();
-  }, [navigate]);
+  const today = DAY_NAMES[new Date().getDay()];
+  const todayPlan = schedule.find((day) => day.day === today);
+  const nextWorkout = useMemo(() => {
+    if (!schedule.length) return null;
+    const todayIndex = DAY_NAMES.indexOf(today);
+    for (let offset = 0; offset < 7; offset += 1) {
+      const candidateName = DAY_NAMES[(todayIndex + offset) % 7];
+      const candidate = schedule.find((day) => day.day === candidateName && !day.rest);
+      if (candidate) return { ...candidate, isToday: offset === 0 };
+    }
+    return null;
+  }, [schedule, today]);
 
-  const accentFilled = "var(--mantine-color-primary-filled)";
-  
-  const totalWorkouts = plan.filter(d => !d.rest).length;
-  const progressValue = totalWorkouts > 0 ? (completedCount / totalWorkouts) * 100 : 0;
+  const minutesThisWeek = weekSessions.reduce((sum, item) => sum + (Number(item.duration_seconds) || 0), 0) / 60;
 
-  if (loading) {
-    return (
-      <Box
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "50vh",
-        }}
-      >
-        <Loader size="xl" />
-      </Box>
-    );
-  }
+  const startWorkout = (workout) => {
+    const paused = getStoredDraft(session.user.id);
+    if (paused) {
+      setDraft(paused);
+      setPendingWorkout(workout);
+      return;
+    }
+    navigate("/workout", { state: { workout, planId: planRecord?.id } });
+  };
 
-  if (!profile) return null;
-
-  const handleDayClick = (day) => {
-    setSelectedDay(day);
-    openDrawer();
+  const replacePausedWorkout = () => {
+    if (!pendingWorkout) return;
+    localStorage.removeItem(ACTIVE_DRAFT_KEY);
+    navigate("/workout", { state: { workout: pendingWorkout, planId: planRecord?.id } });
   };
 
   const handleRegenerate = async () => {
-    if (!profile) return;
     setRegenerating(true);
     try {
       const planJson = await generateWorkoutPlan(profile);
-
-      const { error } = await supabase.from("workout_plans").insert({
-        user_id: profile.user_id,
-        plan_json: planJson,
+      const normalized = normalizeAndValidateWorkoutPlan(planJson, {
+        selectedEquipment: profile.equipment,
+        expectedFrequency: profile.gym_frequency,
+      });
+      if (!normalized.valid) throw new Error(normalized.errors[0] || "The generated plan was incomplete.");
+      const { data, error: insertError } = await supabase.from("workout_plans").insert({
+        user_id: session.user.id,
+        plan_json: normalized.plan,
         fitness_goal: profile.fitness_goal,
         experience_level: profile.experience_level,
-      });
-
-      if (error) throw error;
-
-      setPlan(planJson.weekly_schedule || []);
-      notifications.show({
-        title: "Plan updated",
-        message: "Your new workout plan has been generated!",
-        color: "green",
-      });
-    } catch (error) {
-      console.error("Error regenerating plan:", error);
-      notifications.show({
-        title: "Regeneration failed",
-        message: "Failed to generate a new plan. Please try again.",
-        color: "red",
-      });
+      }).select("*").single();
+      if (insertError) throw insertError;
+      setPlanRecord(data);
+      setCompletedDays(new Set());
+      setWeekSessions([]);
+      setConfirmRegenerate(false);
+      notifications.show({ title: "Your new week is ready", message: "Review it and swap anything that doesn't feel right.", color: "green" });
+    } catch (generationError) {
+      notifications.show({ title: "We couldn't rebuild the plan", message: generationError.message, color: "red" });
     } finally {
       setRegenerating(false);
     }
   };
 
-  return (
-    <Stack gap="xl">
-      {/* Welcome banner */}
-      <Paper
-        className="glass shadow-glow"
-        radius="32px"
-        p={{ base: "xl", md: 32 }}
-      >
-        <Group justify="space-between" align="flex-end">
-          <Box>
-            <Title order={1} size="h2" fw={700}>
-              Welcome back, {profile.name.split(" ")[0]}{" "}
-              <span style={{ display: "inline-block" }}>👋</span>
-            </Title>
-            <Text c="dimmed" mt={4}>
-              Here's your plan for this week.
-            </Text>
-          </Box>
-          <Box style={{ textAlign: 'right', minWidth: rem(200) }}>
-            <Group justify="space-between" mb="xs">
-              <Text size="xs" fw={700}>WEEKLY PROGRESS</Text>
-              <Text size="xs" c="dimmed">{completedCount}/{totalWorkouts} Workouts</Text>
-            </Group>
-            <Progress 
-              value={progressValue} 
-              size="sm" 
-              radius="xl" 
-              classNames={{ section: "shadow-glow" }}
-            />
-          </Box>
-        </Group>
-      </Paper>
+  const sendEncouragement = async () => {
+    if (!partner?.user_id) return;
+    const { error: sendError } = await supabase.from("partner_reactions").insert({
+      sender_id: session.user.id, recipient_id: partner.user_id,
+      type: "heart", message: `${profile.name?.split(" ")[0] || "Your partner"} is cheering you on`,
+    });
+    if (sendError) notifications.show({ title: "Couldn't send that", message: sendError.message, color: "red" });
+    else notifications.show({ title: `Sent to ${partner.name?.split(" ")[0] || "your partner"}`, message: "A little encouragement goes a long way.", color: "orange" });
+  };
 
-      {/* Stats row */}
-      <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
-        <Stat
-          icon={Calendar}
-          label="Workout Days"
-          value={`${profile.gym_frequency}/week`}
-        />
-        <Stat icon={Target} label="Current Goal" value={profile.fitness_goal.toUpperCase()} />
-        <Stat
-          icon={Award}
-          label="Experience"
-          value={profile.experience_level.toUpperCase()}
-        />
-        <Stat
-          icon={Clock}
-          label="Duration"
-          value={`${profile.workout_duration}m`}
-        />
+  if (loading) return <Center mih="55vh"><Loader color="brand" /></Center>;
+
+  if (error) {
+    return (
+      <Alert icon={<CircleAlert size={18} />} title="Something went wrong" color="red">
+        <Text size="sm" mb="md">{error}</Text>
+        <Button variant="light" color="red" onClick={loadDashboard}>Try again</Button>
+      </Alert>
+    );
+  }
+
+  if (!planRecord || !schedule.length) {
+    return (
+      <Stack gap="xl">
+        <PageHeading profile={profile} />
+        <Paper className="surface-raised" p={{ base: "xl", md: 48 }}>
+          <ThemeIcon color="brand" c="dark.9" size={56} radius="md"><Sparkles size={27} /></ThemeIcon>
+          <Title order={2} mt="xl">Let's finish your training setup.</Title>
+          <Text c="dimmed" mt="sm" maw={560}>Your profile is saved, but there isn't a usable plan yet. Rebuild it now—your answers are still here.</Text>
+          <Button mt="xl" onClick={() => setConfirmRegenerate(true)} rightSection={<ArrowRight size={18} />}>Create my plan</Button>
+        </Paper>
+        <RegenerateModal opened={confirmRegenerate} close={() => setConfirmRegenerate(false)} run={handleRegenerate} loading={regenerating} firstPlan />
+      </Stack>
+    );
+  }
+
+  return (
+    <Stack gap={32}>
+      <PageHeading profile={profile} />
+
+      {draft && (
+        <Alert icon={<RotateCcw size={20} />} color="brand" title="Workout paused">
+          <Group justify="space-between" align="center">
+            <Text size="sm">{draft.workout.type} · {draft.completedSets || 0} sets logged</Text>
+            <Button size="sm" onClick={() => navigate("/workout", { state: { resume: true } })}>Resume</Button>
+          </Group>
+        </Alert>
+      )}
+
+      <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="lg">
+        <Paper className="today-card dashboard-primary" p={{ base: "xl", md: 32 }}>
+          <Stack gap="lg" style={{ position: "relative", zIndex: 1 }}>
+            <Group justify="space-between">
+              <Text className="eyebrow" c="gray.5">{nextWorkout?.isToday ? "Today's session" : "Up next"}</Text>
+              {todayPlan?.rest && <Badge variant="light" color="brand">Recovery today</Badge>}
+            </Group>
+            <Box>
+              <Title order={2} fz={{ base: 34, md: 46 }} lts={-1.5}>{nextWorkout?.type || "Recovery day"}</Title>
+              <Text c="gray.4" mt={6}>{nextWorkout?.focus || todayPlan?.cooldown || "A little recovery keeps the next session strong."}</Text>
+            </Box>
+            {nextWorkout && (
+              <Group gap="lg">
+                <Group gap={7}><Dumbbell size={16} color="var(--brand)" /><Text size="sm">{nextWorkout.exercises?.length || 0} movements</Text></Group>
+                <Group gap={7}><Clock3 size={16} color="var(--brand)" /><Text size="sm">~{nextWorkout.estimated_duration_mins || profile.workout_duration} min</Text></Group>
+              </Group>
+            )}
+            <Group mt="sm">
+              {nextWorkout && <Button color="brand" c="dark.9" size="lg" onClick={() => startWorkout(nextWorkout)} rightSection={<ArrowRight size={18} />}>Start workout</Button>}
+              <Button component={Link} to="/plan" variant="subtle" color="gray" c="gray.3">View details</Button>
+            </Group>
+          </Stack>
+        </Paper>
+
+        <Paper className="surface-raised partner-accent" p="xl">
+          <Text className="eyebrow">Together</Text>
+          {partner ? (
+            <Stack mt="lg" gap="md">
+              <Group gap="sm"><ThemeIcon color="orange" variant="light" radius="xl"><Heart size={17} fill="currentColor" /></ThemeIcon><Box><Text fw={800}>{partner.name}</Text><Text size="xs" c="dimmed">Your training teammate</Text></Box></Group>
+              <Text size="sm" c="dimmed">A quick nudge can be the difference between “later” and “done.”</Text>
+              <Group><Button size="sm" color="orange" variant="light" leftSection={<Heart size={15} />} onClick={sendEncouragement}>Send a boost</Button><Button component={Link} to="/together" size="sm" variant="subtle">Open Together</Button></Group>
+            </Stack>
+          ) : (
+            <Stack mt="lg" gap="md"><Title order={3} fz="xl">Bring your person in.</Title><Text size="sm" c="dimmed">Connect to share wins, notes, and the rhythm of your week.</Text><Button component={Link} to="/together" variant="light" color="orange">Connect partner</Button></Stack>
+          )}
+        </Paper>
       </SimpleGrid>
 
-      {/* Weekly plan */}
-      <Paper className="glass" radius="32px" p={{ base: "xl", md: 24 }}>
-        <Group justify="space-between" mb="xl">
-          <div>
-            <Title order={2} size="h4">
-              This Week
-            </Title>
-            <Text c="dimmed" size="sm">
-              Tap a day to see the full workout.
-            </Text>
-          </div>
-          <Button
-            variant="outline"
-            radius="xl"
-            leftSection={<RefreshCw size={16} />}
-            onClick={handleRegenerate}
-            loading={regenerating}
-          >
-            Regenerate
-          </Button>
+      <Box>
+        <Group justify="space-between" align="flex-end" mb="md">
+          <Box><Text className="eyebrow">Your week</Text><Title order={2} fz={28} mt={4}>{completedDays.size} of {activeDays.length} sessions done</Title></Box>
+          <Button variant="subtle" color="gray" leftSection={<Settings2 size={16} />} component={Link} to="/plan">Adjust plan</Button>
         </Group>
-
-        <ScrollArea pb="md">
-          <Group wrap="nowrap" gap="md" align="flex-start">
-            {plan
-              .filter((d) => !d.rest)
-              .map((d) => (
+        <Paper className="surface" p="md">
+          <Progress value={progress} color="brand" size="sm" radius="xl" mb="md" aria-label={`${Math.round(progress)} percent of weekly workouts complete`} />
+          <SimpleGrid cols={7} spacing={{ base: 5, sm: "sm" }}>
+            {schedule.map((day) => {
+              const complete = completedDays.has(day.day);
+              return (
                 <UnstyledButton
-                  key={d.day}
-                  onClick={() => handleDayClick(d)}
-                  className="glass"
-                  style={{
-                    minWidth: rem(180),
-                    padding: rem(16),
-                    borderRadius: rem(16),
-                    opacity: d.rest ? 0.7 : 1,
-                    justifySelf: "flex-start",
-                  }}
+                  key={day.day_id || day.day}
+                  className="day-pill"
+                  data-active={day.day === today}
+                  data-complete={complete}
+                  onClick={() => navigate("/plan", { state: { day: day.day } })}
+                  py={{ base: 10, sm: 14 }}
+                  px={{ base: 3, sm: 8 }}
+                  style={{ borderRadius: 10, textAlign: "center" }}
+                  aria-label={`${day.day}: ${day.rest ? "rest day" : day.type}${complete ? ", completed" : ""}`}
                 >
-                  <Group justify="space-between">
-                    <Text size="xs" fw={600} c="dimmed" tt="uppercase">
-                      {d.day.slice(0, 3)}
-                    </Text>
-                    <Badge
-                      variant="light"
-                      color={d.rest ? "gray" : "primary"}
-                      radius="xl"
-                      size="xs"
-                    >
-                      {d.rest ? "Rest" : "Active"}
-                    </Badge>
-                  </Group>
-                  <Group gap="xs" mt="md">
-                    {d.rest ? (
-                      <Coffee size={16} color="var(--mantine-color-dimmed)" />
-                    ) : (
-                      <Dumbbell size={16} color={accentFilled} />
-                    )}
-                    <Text fw={700} size="md">
-                      {d.type}
-                    </Text>
-                  </Group>
-                  <Stack gap={6} mt="md">
-                    {d.exercises.slice(0, 4).map((ex) => (
-                      <Group key={ex.name} gap={6} wrap="nowrap">
-                        {ex.equipment_id && (
-                          <Image
-                            src={getEquipmentById(ex.equipment_id)?.image_url}
-                            w={14}
-                            h={14}
-                            fit="contain"
-                            fallbackSrc="https://placehold.co/14?text=?"
-                          />
-                        )}
-                        <Text c="dimmed" size="xs" truncate="end">
-                          {!ex.equipment_id && "• "}{ex.name}
-                        </Text>
-                      </Group>
-                    ))}
-                    {d.exercises.length > 4 && (
-                      <Text style={{ color: accentFilled }} size="xs" fw={500}>
-                        +{d.exercises.length - 4} more
-                      </Text>
-                    )}
-                    {d.rest && (
-                      <Text c="dimmed" size="xs" fs="italic">
-                        Recovery day
-                      </Text>
-                    )}
-                  </Stack>
+                  <Text size="xs" fw={800}>{day.day.slice(0, 3)}</Text>
+                  <Text size="xs" c={day.day === today ? undefined : "dimmed"} mt={2} visibleFrom="sm">{day.rest ? "Rest" : day.type?.split(" ")[0]}</Text>
+                  {complete && <Check size={13} style={{ margin: "5px auto 0" }} />}
                 </UnstyledButton>
-              ))}
-          </Group>
-        </ScrollArea>
-      </Paper>
+              );
+            })}
+          </SimpleGrid>
+        </Paper>
+      </Box>
 
-      {/* Detail Drawer */}
-      <Drawer
-        opened={opened}
-        onClose={closeDrawer}
-        position="right"
-        size="md"
-        title={selectedDay?.type}
-        classNames={{ content: "glass-strong" }}
-      >
-        {selectedDay && (
-          <Stack gap="lg">
-            <Box>
-              <Badge variant="light" mb="xs">
-                {selectedDay.day}
-              </Badge>
-              <Title order={2} size="h3">
-                {selectedDay.type}
-              </Title>
-              <Text c="dimmed" size="sm">
-                {selectedDay.rest
-                  ? "Take it easy — recovery is part of the plan."
-                  : `${selectedDay.exercises.length} exercises · ~${profile.workout_duration} min`}
-              </Text>
-            </Box>
+      <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
+        <Metric icon={Flame} label="This week" value={`${completedDays.size}`} suffix="sessions" />
+        <Metric icon={Clock3} label="Time trained" value={`${Math.round(minutesThisWeek)}`} suffix="minutes" />
+        <Metric icon={CalendarDays} label="Plan rhythm" value={`${activeDays.length}×`} suffix="per week" />
+        <Metric icon={Dumbbell} label="Session length" value={`${profile.workout_duration}`} suffix="minutes" />
+      </SimpleGrid>
 
-            <Stack gap="md">
-              {selectedDay.exercises.map((ex, i) => (
-                <Paper key={ex.name} className="glass" p="md" radius="lg">
-                  <Group justify="space-between" align="flex-start">
-                    <Group align="center" gap="md">
-                      {ex.equipment_id && (
-                        <Image
-                          src={getEquipmentById(ex.equipment_id)?.image_url}
-                          alt={getEquipmentById(ex.equipment_id)?.name}
-                          w={40}
-                          h={40}
-                          fit="contain"
-                          fallbackSrc="https://placehold.co/40?text=?"
-                        />
-                      )}
-                      <Box>
-                        <Text c="dimmed" size="xs" ff="monospace">
-                          {String(i + 1).padStart(2, "0")}
-                        </Text>
-                      <Text fw={700} size="md" mt={4}>
-                        {ex.name}
-                      </Text>
-                      {ex.muscle_group && (
-                        <Badge variant="dot" size="xs" mt={4}>
-                          {ex.muscle_group}
-                        </Badge>
-                      )}
-                      </Box>
-                    </Group>
-                    {ex.instructions && ex.instructions.length > 0 && (
-                      <Box mt="md">
-                        <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb={4}>Instructions</Text>
-                        <Stack gap={4}>
-                          {ex.instructions.map((step, idx) => (
-                            <Text key={idx} size="xs" lh={1.4}>
-                              {idx + 1}. {step}
-                            </Text>
-                          ))}
-                        </Stack>
-                      </Box>
-                    )}
-                    <div style={{ textAlign: "right" }}>
-                      <Text style={{ color: accentFilled }} fw={700} size="xl">
-                        {ex.sets} × {ex.reps}
-                      </Text>
-                      <Text c="dimmed" size="xs">
-                        rest {ex.rest_seconds}s
-                      </Text>
-                    </div>
-                  </Group>
-                  {ex.note && (
-                    <Box
-                      mt="md"
-                      pt="md"
-                      style={{
-                        borderTop: "1px solid var(--mantine-color-gray-2)",
-                      }}
-                    >
-                      <Text c="dimmed" size="xs" fs="italic">
-                        💡 {ex.note}
-                      </Text>
-                    </Box>
-                  )}
-                </Paper>
-              ))}
-              {selectedDay.rest && (
-                <Paper className="glass" p="xl" radius="lg" ta="center">
-                  <Coffee size={40} color="var(--mantine-color-dimmed)" />
-                  <Text mt="md" size="sm">
-                    Stretch, hydrate, and let your body adapt.
-                  </Text>
-                </Paper>
-              )}
-            </Stack>
-            {!selectedDay.rest && (
-              <Button
-                fullWidth
-                size="lg"
-                radius="xl"
-                onClick={() =>
-                  navigate("/workout", {
-                    state: { workout: selectedDay, planId: planId },
-                  })
-                }
-              >
-                Start Workout
-              </Button>
-            )}
-          </Stack>
-        )}
-      </Drawer>
+      <Group justify="space-between" pt="md" style={{ borderTop: "1px solid var(--line)" }}>
+        <Text size="sm" c="dimmed">Want a completely different week?</Text>
+        <Button variant="subtle" color="gray" leftSection={<RefreshCw size={16} />} onClick={() => setConfirmRegenerate(true)}>Rebuild plan</Button>
+      </Group>
+
+      <RegenerateModal opened={confirmRegenerate} close={() => setConfirmRegenerate(false)} run={handleRegenerate} loading={regenerating} />
+      <Modal opened={Boolean(pendingWorkout)} onClose={() => setPendingWorkout(null)} title="You already have a paused workout">
+        <Stack><Text size="sm" c="dimmed">Resume the saved session to keep its set entries, or discard it and start {pendingWorkout?.type || "this workout"}.</Text><Group justify="flex-end"><Button variant="light" color="gray" onClick={() => navigate("/workout")}>Resume paused</Button><Button color="red" variant="light" onClick={replacePausedWorkout}>Discard & start new</Button></Group></Stack>
+      </Modal>
     </Stack>
   );
 }
 
-export default Dashboard;
+function PageHeading({ profile }) {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  return <Box><Text className="eyebrow">{new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(new Date())}</Text><Title order={1} fz={{ base: 38, md: 50 }} lts={-2} mt={4}>{greeting}, {profile.name?.split(" ")[0]}.</Title></Box>;
+}
 
-function Stat({ icon: Icon, label, value }) {
+function Metric({ icon: Icon, label, value, suffix }) {
+  return <Paper className="surface" p="lg"><Group gap="xs"><Icon size={16} color="var(--ink-soft)" /><Text className="eyebrow">{label}</Text></Group><Text className="metric-number" fz={{ base: 28, md: 36 }} fw={850} mt="md">{value}</Text><Text size="xs" c="dimmed">{suffix}</Text></Paper>;
+}
+
+function RegenerateModal({ opened, close, run, loading, firstPlan = false }) {
   return (
-    <Paper className="glass" p="md" radius="xl">
-      <Group gap="xs">
-        <ThemeIcon variant="light" size="md" radius="md">
-          <Icon size={16} />
-        </ThemeIcon>
-        <Text c="dimmed" size="xs" fw={500}>
-          {label}
-        </Text>
-      </Group>
-      <Text size="lg" fw={700} mt="xs">
-        {value}
-      </Text>
-    </Paper>
+    <Modal opened={opened} onClose={close} title={firstPlan ? "Build your plan" : "Rebuild this week?"} closeOnClickOutside={!loading} withCloseButton={!loading}>
+      <Stack>
+        <Text size="sm" c="dimmed">{firstPlan ? "We'll use your saved profile and equipment to create a complete seven-day schedule." : "This creates a fresh plan from your current preferences. Your completed workout history stays safe."}</Text>
+        {!firstPlan && <Alert color="orange" icon={<CircleAlert size={17} />}>Try swapping a single exercise from Plan if only one movement isn't working.</Alert>}
+        <Group justify="flex-end"><Button variant="subtle" color="gray" onClick={close} disabled={loading}>Cancel</Button><Button onClick={run} loading={loading} leftSection={<RefreshCw size={16} />}>{firstPlan ? "Create plan" : "Rebuild"}</Button></Group>
+      </Stack>
+    </Modal>
   );
 }

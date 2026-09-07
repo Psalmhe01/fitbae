@@ -1,439 +1,325 @@
-import { useState, useEffect } from "react";
-import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  Box,
-  Group,
-  Container,
-  Text,
-  ThemeIcon,
-  Avatar,
-  Menu,
-  Button,
-  UnstyledButton,
-  Stack,
-  rem,
-  Indicator,
-  Popover,
-  ScrollArea,
-  ActionIcon,
-  Divider,
+  ActionIcon, Alert, Avatar, Badge, Box, Button, Center, Container, Divider,
+  Group, Indicator, Loader, Menu, Popover, ScrollArea, Stack, Text,
+  UnstyledButton, rem,
 } from "@mantine/core";
-import { Notifications } from "@mantine/notifications";
 import {
-  LayoutDashboard,
-  CalendarRange,
-  History,
-  User,
-  LogOut,
-  Settings,
-  Dumbbell,
-  ChevronDown,
-  Bell,
-  Heart as HeartIcon,
-  MessageCircle,
+  Bell, CalendarRange, ChevronDown, CircleAlert, Heart, History, LayoutDashboard,
+  LogOut, MessageCircle, RefreshCw, Settings, User,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { BrandMark } from "@/components/BrandMark";
 
 const nav = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/plan", label: "My Plan", icon: CalendarRange },
-  { to: "/history", label: "History", icon: History },
-  { to: "/profile", label: "Profile", icon: User },
+  { to: "/dashboard", label: "Today", icon: LayoutDashboard },
+  { to: "/plan", label: "Plan", icon: CalendarRange },
+  { to: "/together", label: "Together", icon: Heart },
+  { to: "/history", label: "Progress", icon: History },
 ];
 
-// Helper to format date in MM/DD hh:mm AM/PM CST
-const formatCST = (dateString) => {
-  if (!dateString) return "";
-  const date = new Date(dateString);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'America/Chicago',
-  }).formatToParts(date);
-  const p = parts.reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
-  return `${p.month}/${p.day} ${p.hour}:${p.minute} ${p.dayPeriod}`;
+const formatDateTime = (value) => {
+  if (!value) return "";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  }).format(new Date(value));
 };
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [unreadNotifs, setUnreadNotifs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [shellError, setShellError] = useState("");
+  const [authRetry, setAuthRetry] = useState(0);
+  const [notifications, setNotifications] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
-  const path = location.pathname;
-  const accentFilled = "var(--mantine-color-primary-filled)";
+  const isWorkout = location.pathname === "/workout";
 
-  useEffect(() => {
-    const getSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) return navigate("/");
-      setUser(session.user);
-
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("user_id", session.user.id)
-        .single();
-
-      if (!profileData && path !== "/onboarding") {
-        navigate("/onboarding");
-      } else {
-        setProfile(profileData);
-        fetchNotifications(session.user.id);
-      }
-    };
-
-    getSession();
-  }, [navigate, path]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const channel = supabase
-      .channel('global_notifications')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'partner_reactions',
-          filter: `recipient_id=eq.${user.id}`,
-        },
-        (payload) => {
-          const newNotif = {
-            id: payload.new.id,
-            type: 'reaction',
-            content: payload.new.message || 'Sent a heart!',
-            created_at: payload.new.created_at
-          };
-          setUnreadNotifs(prev => [newNotif, ...prev]);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'partner_notes',
-          filter: `recipient_id=eq.${user.id}`,
-        },
-        (payload) => {
-          const newNotif = {
-            id: payload.new.id,
-            type: 'note',
-            content: payload.new.content,
-            created_at: payload.new.created_at
-          };
-          setUnreadNotifs(prev => [newNotif, ...prev]);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id]);
-
-  const fetchNotifications = async (userId) => {
+  const fetchNotifications = useCallback(async (userId) => {
     const [reactionsRes, notesRes] = await Promise.all([
-      supabase
-        .from("partner_reactions")
-        .select("*")
-        .eq("recipient_id", userId)
-        .eq("seen", false)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("partner_notes")
-        .select("*")
-        .eq("recipient_id", userId)
-        .eq("seen", false)
-        .order("created_at", { ascending: false })
+      supabase.from("partner_reactions").select("id,message,created_at")
+        .eq("recipient_id", userId).eq("seen", false).order("created_at", { ascending: false }),
+      supabase.from("partner_notes").select("id,content,created_at")
+        .eq("recipient_id", userId).eq("seen", false).order("created_at", { ascending: false }),
     ]);
-
-    const reactions = (reactionsRes.data || []).map(r => ({
-      id: r.id,
-      type: 'reaction',
-      content: r.message || 'Sent a heart!',
-      created_at: r.created_at
+    const reactions = (reactionsRes.data || []).map((item) => ({
+      id: `reaction-${item.id}`, rowId: item.id, type: "reaction",
+      content: item.message || "Your partner sent some encouragement", created_at: item.created_at,
     }));
-
-    const notes = (notesRes.data || []).map(n => ({
-      id: n.id,
-      type: 'note',
-      content: n.content,
-      created_at: n.created_at
+    const notes = (notesRes.data || []).map((item) => ({
+      id: `note-${item.id}`, rowId: item.id, type: "note",
+      content: item.content, created_at: item.created_at,
     }));
+    setNotifications([...reactions, ...notes].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+  }, []);
 
-    setUnreadNotifs([...reactions, ...notes].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
-  };
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setLoading(true);
+      setShellError("");
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!mounted) return;
+      if (!currentSession) {
+        setLoading(false);
+        navigate("/", { replace: true });
+        return;
+      }
+      setSession(currentSession);
+      const { data: profileData, error: profileError } = await supabase.from("profiles").select("*")
+        .eq("user_id", currentSession.user.id).maybeSingle();
+      if (!mounted) return;
+      if (profileError) {
+        setShellError("FitBae couldn't load your profile. Your data has not been changed.");
+        setLoading(false);
+        return;
+      }
+      if (!profileData) {
+        setLoading(false);
+        navigate("/onboarding", { replace: true });
+        return;
+      }
+      setProfile(profileData);
+      setLoading(false);
+      fetchNotifications(currentSession.user.id);
+    };
+    load();
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!nextSession) navigate("/", { replace: true });
+      setSession(nextSession);
+    });
+    return () => {
+      mounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, [authRetry, fetchNotifications, navigate]);
+
+  useEffect(() => {
+    if (!session?.user?.id) return undefined;
+    const channel = supabase.channel(`notifications-${session.user.id}`)
+      .on("postgres_changes", {
+        event: "INSERT", schema: "public", table: "partner_reactions",
+        filter: `recipient_id=eq.${session.user.id}`,
+      }, () => fetchNotifications(session.user.id))
+      .on("postgres_changes", {
+        event: "INSERT", schema: "public", table: "partner_notes",
+        filter: `recipient_id=eq.${session.user.id}`,
+      }, () => fetchNotifications(session.user.id))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchNotifications, session?.user?.id]);
 
   const markAllRead = async () => {
-    if (!user) return;
-    await Promise.all([
-      supabase
-        .from("partner_reactions")
-        .update({ seen: true })
-        .eq("recipient_id", user.id),
-      supabase
-        .from("partner_notes")
-        .update({ seen: true })
-        .eq("recipient_id", user.id)
+    if (!session?.user?.id || notifications.length === 0) return;
+    const [reactionResult, noteResult] = await Promise.all([
+      supabase.from("partner_reactions").update({ seen: true }).eq("recipient_id", session.user.id).eq("seen", false),
+      supabase.from("partner_notes").update({ seen: true }).eq("recipient_id", session.user.id).eq("seen", false),
     ]);
-    setUnreadNotifs([]);
+    if (!reactionResult.error && !noteResult.error) setNotifications([]);
   };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    navigate("/");
+    navigate("/", { replace: true });
   };
 
+  const isActive = (to) => location.pathname === to || (to === "/history" && location.pathname.startsWith("/history/"));
+
+  if (loading) {
+    return <Center mih="100svh" className="app-shell"><Loader color="brand" size="lg" /></Center>;
+  }
+
+  if (shellError) {
+    return (
+      <Center mih="100svh" className="app-shell" p="lg">
+        <Alert icon={<CircleAlert size={18} />} color="red" title="We couldn't open FitBae" maw={520}>
+          <Text size="sm" mb="md">{shellError}</Text>
+          <Button color="red" variant="light" leftSection={<RefreshCw size={16} />} onClick={() => setAuthRetry((value) => value + 1)}>Try again</Button>
+        </Alert>
+      </Center>
+    );
+  }
+
   return (
-    <Box className="bg-hero" style={{ minHeight: "100vh" }}>
-      <Notifications position="top-right" zIndex={2000} />
-      
-      <Box
-        component="header"
-        className="glass-strong"
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 100,
-          borderBottom: "1px solid var(--border)",
-          height: rem(64),
-        }}
-      >
-        <Container size="lg" h="100%">
-          <Group justify="space-between" h="100%">
-            <UnstyledButton component={Link} to="/dashboard">
-              <Group gap="xs">
-                <ThemeIcon variant="light" size="lg" radius="xl">
-                  <Dumbbell size={20} />
-                </ThemeIcon>
-                <Text size="lg" fw={700} style={{ trackingTight: "-0.02em" }}>
-                  FitBae
-                </Text>
-              </Group>
+    <Box className="app-shell">
+      <a href="#main-content" className="skip-link">Skip to content</a>
+
+      {!isWorkout && (
+        <Box
+          component="aside"
+          className="app-sidebar"
+          visibleFrom="md"
+          w={264}
+          p="lg"
+          style={{ position: "fixed", insetBlock: 0, insetInlineStart: 0, zIndex: 120 }}
+        >
+          <Stack h="100%" gap="xl">
+            <UnstyledButton component={Link} to="/dashboard" aria-label="FitBae home">
+              <BrandMark light />
             </UnstyledButton>
+            <Stack component="nav" aria-label="Primary navigation" gap={6} mt="md">
+              {nav.map(({ to, label, icon: Icon }) => (
+                <UnstyledButton
+                  component={Link}
+                  to={to}
+                  key={to}
+                  className="nav-link"
+                  data-active={isActive(to)}
+                  aria-current={isActive(to) ? "page" : undefined}
+                  px="md"
+                  py={12}
+                  style={{ borderRadius: rem(10) }}
+                >
+                  <Group gap="sm"><Icon size={18} /><Text fw={700} size="sm">{label}</Text></Group>
+                </UnstyledButton>
+              ))}
+            </Stack>
 
-            <Group gap="md">
-              <ThemeToggle />
-              
-              <Popover width={300} position="bottom-end" shadow="md">
-                <Popover.Target>
-                  <Indicator label={unreadNotifs.length} size={16} disabled={unreadNotifs.length === 0} color="red" withBorder offset={4}>
-                    <ActionIcon variant="subtle" color="gray" radius="xl" size="lg">
-                      <Bell size={20} />
-                    </ActionIcon>
-                  </Indicator>
-                </Popover.Target>
-                <Popover.Dropdown className="glass-strong" p="xs">
-                  <Group justify="space-between" mb="xs" px="xs" pt="xs">
-                    <Text fw={700} size="sm">Notifications</Text>
-                    {unreadNotifs.length > 0 && (
-                      <Button variant="subtle" size="compact-xs" onClick={markAllRead}>Clear All</Button>
-                    )}
-                  </Group>
-                  <Divider mb="xs" opacity={0.3} />
-                  <ScrollArea.Autosize maxHeight={300}>
-                    {unreadNotifs.length === 0 ? (
-                      <Text size="xs" c="dimmed" ta="center" py="xl">No new notifications</Text>
-                    ) : (
-                      <Stack gap={4}>
-                        {unreadNotifs.map((n) => (
-                          <UnstyledButton 
-                            key={n.id} 
-                            p="xs" 
-                            className="glass" 
-                            style={{ borderRadius: '8px' }}
-                          >
-                            <Group wrap="nowrap" gap="sm">
-                              <ThemeIcon 
-                                size="sm" 
-                                variant="light" 
-                                color={n.type === 'reaction' ? "pink" : "blue"} 
-                                radius="xl"
-                              >
-                                {n.type === 'reaction' ? <HeartIcon size={12} fill="currentColor" /> : <MessageCircle size={12} />}
-                              </ThemeIcon>
-                              <Box style={{ flex: 1 }}>
-                                <Text size="xs" fw={500}>{n.content}</Text>
-                                <Text size="10px" c="dimmed">{formatCST(n.created_at)}</Text>
-                              </Box>
-                            </Group>
-                          </UnstyledButton>
-                        ))}
-                      </Stack>
-                    )}
-                  </ScrollArea.Autosize>
-                </Popover.Dropdown>
-              </Popover>
+            <Box mt="auto">
+              <PaperLikePartnerCta navigate={navigate} />
+              <Divider my="lg" color="rgba(255,255,255,.12)" />
+              <UserMenu
+                profile={profile}
+                session={session}
+                navigate={navigate}
+                signOut={handleSignOut}
+                inverted
+              />
+            </Box>
+          </Stack>
+        </Box>
+      )}
 
-              <Menu shadow="md" width={200} position="bottom-end">
-                <Menu.Target>
-                  <UnstyledButton
-                    className="glass"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: rem(8),
-                      borderRadius: rem(100),
-                      padding: `${rem(4)} ${rem(12)} ${rem(4)} ${rem(4)}`,
-                    }}
-                  >
-                    <Avatar
-                      color="primary"
-                      radius="xl"
-                      size="sm"
-                      src={user?.user_metadata?.avatar_url}
-                    >
-                      {profile?.name?.charAt(0) || user?.email?.charAt(0)}
-                    </Avatar>
-                    <Text size="sm" fw={500} visibleFrom="md">
-                      {profile?.name || "User"}
-                    </Text>
-                    <ChevronDown
-                      size={16}
-                      color="var(--mantine-color-dimmed)"
-                    />
-                  </UnstyledButton>
-                </Menu.Target>
-
-                <Menu.Dropdown className="glass-strong">
-                  <Menu.Item
-                    leftSection={<User size={16} />}
-                    onClick={() => navigate("/profile")}
-                  >
-                    Profile
-                  </Menu.Item>
-                  <Menu.Item
-                    leftSection={<Settings size={16} />}
-                    onClick={() => navigate("/settings")}
-                  >
-                    Settings
-                  </Menu.Item>
-                  <Menu.Divider />
-                  <Menu.Item
-                    color="red"
-                    leftSection={<LogOut size={16} />}
-                    onClick={handleSignOut}
-                  >
-                    Sign out
-                  </Menu.Item>
-                </Menu.Dropdown>
-              </Menu>
+      <Box ml={{ base: 0, md: isWorkout ? 0 : 264 }}>
+        <Box
+          component="header"
+          className="app-header"
+          h={72}
+          style={{ position: "sticky", top: 0, zIndex: 110 }}
+        >
+          <Container size={isWorkout ? "sm" : "xl"} h="100%">
+            <Group h="100%" justify="space-between">
+              <Box hiddenFrom="md">{isWorkout ? <BrandMark compact /> : <BrandMark />}</Box>
+              <Text className="eyebrow" visibleFrom="md">
+                {isWorkout ? "Session in progress" : `Welcome back, ${profile?.name?.split(" ")[0] || "athlete"}`}
+              </Text>
+              <Group gap={4}>
+                {!isWorkout && <NotificationMenu items={notifications} markAllRead={markAllRead} />}
+                <ThemeToggle />
+                {!isWorkout && (
+                  <Box hiddenFrom="md">
+                    <UserMenu profile={profile} session={session} navigate={navigate} signOut={handleSignOut} />
+                  </Box>
+                )}
+              </Group>
             </Group>
-          </Group>
+          </Container>
+        </Box>
+
+        <Container
+          id="main-content"
+          component="main"
+          size={isWorkout ? "sm" : "xl"}
+          py={{ base: "lg", md: 36 }}
+          pb={{ base: isWorkout ? 120 : 104, md: isWorkout ? 120 : 48 }}
+        >
+          <Outlet context={{ profile, session, setProfile }} />
         </Container>
       </Box>
 
-      <Container size="lg" py="xl">
-        <Group align="flex-start" gap="xl">
-          <Box
-            component="aside"
-            visibleFrom="md"
-            style={{ width: rem(224), flexShrink: 0 }}
-          >
-            <Stack
-              component="nav"
-              className="glass"
-              p="md"
-              radius="xl"
-              gap={4}
-              style={{ position: "sticky", top: rem(96) }}
-            >
-              {nav.map((item) => {
-                const Icon = item.icon;
-                const active = path === item.to;
-                return (
-                  <UnstyledButton
-                    key={item.to}
-                    component={Link}
-                    to={item.to}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: rem(12),
-                      padding: `${rem(10)} ${rem(12)}`,
-                      borderRadius: rem(12),
-                      fontSize: rem(14),
-                      fontWeight: 500,
-                      backgroundColor: active
-                        ? "var(--mantine-color-primary-filled)"
-                        : "transparent",
-                      color: active
-                        ? "var(--mantine-color-primary-light-color)"
-                        : "var(--mantine-color-text)",
-                      boxShadow: active ? "var(--shadow-glow)" : "none",
-                      transition: "all 0.2s ease",
-                    }}
-                  >
-                    <Icon size={16} />
-                    <Text size="sm" fw={500} inherit>
-                      {item.label}
-                    </Text>
-                  </UnstyledButton>
-                );
-              })}
-            </Stack>
-          </Box>
-
-          <Box
-            component="main"
-            style={{ flex: 1, minWidth: 0 }}
-            pb={{ base: 80, md: 0 }}
-          >
-            <Outlet />
-          </Box>
-        </Group>
-      </Container>
-
-      <Box
-        component="nav"
-        hiddenFrom="md"
-        className="glass-strong"
-        style={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          zIndex: 40,
-          borderTop: "1px solid var(--border)",
-        }}
-      >
-        <Group grow gap={0}>
-          {nav.map((item) => {
-            const Icon = item.icon;
-            const active = path === item.to;
-            return (
+      {!isWorkout && (
+        <Box component="nav" className="mobile-nav" hiddenFrom="md" pos="fixed" bottom={0} left={0} right={0} style={{ zIndex: 130 }} aria-label="Primary navigation">
+          <Group grow gap={0} wrap="nowrap">
+            {nav.map(({ to, label, icon: Icon }) => (
               <UnstyledButton
-                key={item.to}
                 component={Link}
-                to={item.to}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: rem(4),
-                  padding: `${rem(12)} 0`,
-                  color: active ? accentFilled : "var(--mantine-color-dimmed)",
-                  transition: "color 0.2s ease",
-                }}
+                to={to}
+                key={to}
+                className="mobile-nav-link"
+                data-active={isActive(to)}
+                aria-current={isActive(to) ? "page" : undefined}
+                py={11}
               >
-                <Icon size={20} />
-                <Text size="xs" fw={500} inherit>
-                  {item.label}
-                </Text>
+                <Stack align="center" gap={3}><Icon size={20} /><Text size="xs" fw={700}>{label}</Text></Stack>
               </UnstyledButton>
-            );
-          })}
-        </Group>
-      </Box>
+            ))}
+          </Group>
+        </Box>
+      )}
     </Box>
+  );
+}
+
+function PaperLikePartnerCta({ navigate }) {
+  return (
+    <UnstyledButton
+      onClick={() => navigate("/together")}
+      w="100%"
+      p="md"
+      style={{ border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, background: "rgba(255,255,255,.05)", color: "white" }}
+    >
+      <Group gap="sm" wrap="nowrap">
+        <Heart size={18} color="var(--brand-coral)" fill="var(--brand-coral)" />
+        <Box><Text size="sm" fw={800}>Your two-person team</Text><Text size="xs" c="gray.5">Open Together</Text></Box>
+      </Group>
+    </UnstyledButton>
+  );
+}
+
+function UserMenu({ profile, session, navigate, signOut, inverted = false }) {
+  return (
+    <Menu shadow="md" width={210} position="top-end">
+      <Menu.Target>
+        <UnstyledButton aria-label="Open account menu" w={inverted ? "100%" : undefined}>
+          <Group gap="sm" wrap="nowrap">
+            <Avatar color="brand" c="dark.9" radius="xl" size={38} src={session?.user?.user_metadata?.avatar_url}>
+              {profile?.name?.charAt(0) || session?.user?.email?.charAt(0)}
+            </Avatar>
+            {inverted && <Box style={{ minWidth: 0 }}><Text c="white" size="sm" fw={700} truncate>{profile?.name}</Text><Text c="gray.5" size="xs">Account</Text></Box>}
+            <ChevronDown size={15} color={inverted ? "#adb5bd" : "currentColor"} />
+          </Group>
+        </UnstyledButton>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Item leftSection={<User size={16} />} onClick={() => navigate("/profile")}>Profile</Menu.Item>
+        <Menu.Item leftSection={<Settings size={16} />} onClick={() => navigate("/settings")}>Preferences</Menu.Item>
+        <Menu.Divider />
+        <Menu.Item color="red" leftSection={<LogOut size={16} />} onClick={signOut}>Sign out</Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
+function NotificationMenu({ items, markAllRead }) {
+  return (
+    <Popover width={320} position="bottom-end" shadow="lg">
+      <Popover.Target>
+        <Indicator label={items.length} size={17} disabled={!items.length} color="orange" withBorder offset={4}>
+          <ActionIcon variant="subtle" color="gray" size={44} aria-label={`Notifications${items.length ? `, ${items.length} unread` : ""}`}>
+            <Bell size={19} />
+          </ActionIcon>
+        </Indicator>
+      </Popover.Target>
+      <Popover.Dropdown p={0}>
+        <Group justify="space-between" p="md" pb="sm">
+          <Text fw={800}>Notifications</Text>
+          {items.length > 0 && <Button variant="subtle" size="compact-sm" onClick={markAllRead}>Mark read</Button>}
+        </Group>
+        <Divider />
+        <ScrollArea.Autosize mah={340}>
+          {!items.length ? (
+            <Stack align="center" py="xl" gap="xs"><Bell size={24} color="var(--ink-soft)" /><Text size="sm" c="dimmed">You're all caught up.</Text></Stack>
+          ) : items.map((item) => (
+            <Group key={item.id} align="flex-start" wrap="nowrap" p="md" style={{ borderBottom: "1px solid var(--line)" }}>
+              <Box mt={2}>{item.type === "reaction" ? <Heart size={16} color="var(--brand-coral)" fill="var(--brand-coral)" /> : <MessageCircle size={16} />}</Box>
+              <Box style={{ minWidth: 0 }}><Text size="sm" fw={600}>{item.content}</Text><Text size="xs" c="dimmed" mt={3}>{formatDateTime(item.created_at)}</Text></Box>
+            </Group>
+          ))}
+        </ScrollArea.Autosize>
+      </Popover.Dropdown>
+    </Popover>
   );
 }

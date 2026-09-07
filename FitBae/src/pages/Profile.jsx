@@ -1,675 +1,177 @@
-import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useOutletContext } from "react-router-dom";
 import {
-  Stack,
-  Title,
-  Text,
-  Paper,
-  SimpleGrid,
-  Button,
-  Box,
-  Group,
-  Avatar,
-  ThemeIcon,
-  rem,
-  Loader,
-  Center,
-  Badge,
-  TextInput,
-  ActionIcon,
-  Modal,
-  Textarea,
-  CopyButton,
-  Tooltip,
+  Alert, Avatar, Badge, Box, Button, Center, Group, Loader, Paper,
+  SimpleGrid, Stack, Text, ThemeIcon, Title,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
-import { notifications } from "@mantine/notifications";
-import { BarChart } from "@mantine/charts";
-import {
-  Settings,
-  Award,
-  Target,
-  Activity,
-  Calendar,
-  FileText,
-  Bell,
-  BellOff,
-  Heart,
-  UserPlus,
-  Check,
-  X,
-  Send,
-  Copy,
-  MessageCircle,
-} from "lucide-react";
+import { Activity, ArrowRight, Award, CalendarDays, Clock3, Dumbbell, Settings2, Target } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { requestPermission } from "@/lib/notifications";
 
-// Helper to format date in MM/DD hh:mm AM/PM CST
-const formatCST = (dateString) => {
-  if (!dateString) return "";
-  const date = new Date(dateString);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'America/Chicago',
-  }).formatToParts(date);
-  const p = parts.reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
-  return `${p.month}/${p.day} ${p.hour}:${p.minute} ${p.dayPeriod}`;
+const dateLabel = (value) => new Intl.DateTimeFormat(undefined, {
+  month: "short", day: "numeric", year: "numeric",
+}).format(new Date(value));
+
+const durationLabel = (seconds = 0) => {
+  const minutes = Math.round(Number(seconds) / 60);
+  return minutes < 1 ? "<1 min" : `${minutes} min`;
 };
 
+function startOfWeek(daysAgo = 6) {
+  const date = new Date();
+  date.setDate(date.getDate() - daysAgo);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
 export default function ProfilePage() {
-  const [profile, setProfile] = useState(null);
-  const [partnership, setPartnership] = useState(null);
-  const [partnerProfile, setPartnerProfile] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [notes, setNotes] = useState([]);
-  const [chartData, setChartData] = useState([]);
+  const { profile, session } = useOutletContext();
+  const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [inviteId, setInviteId] = useState("");
-  const [noteContent, setNoteContent] = useState("");
-  const [noteOpened, { open: openNote, close: closeNote }] = useDisclosure(false);
-  const [sendingNote, setSendingNote] = useState(false);
-  const [notifPermission, setNotifPermission] = useState(
-    typeof Notification !== "undefined" ? Notification.permission : "default"
-  );
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const fetchData = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (session) {
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        sevenDaysAgo.setHours(0, 0, 0, 0);
-
-        const [profileRes, historyRes, chartRes] = await Promise.all([
-          supabase
-            .from("profiles")
-            .select("*")
-            .eq("user_id", session.user.id)
-            .single(),
-          supabase
-            .from("workout_sessions")
-            .select("*")
-            .eq("user_id", session.user.id)
-            .eq("status", "completed")
-            .order("finished_at", { ascending: false })
-            .limit(3),
-          supabase
-            .from("workout_sessions")
-            .select("finished_at, exercise_logs(weight_lbs, skipped)")
-            .eq("user_id", session.user.id)
-            .eq("status", "completed")
-            .gte("finished_at", sevenDaysAgo.toISOString()),
-        ]);
-
-        if (profileRes.data) setProfile(profileRes.data);
-        if (historyRes.data) setHistory(historyRes.data);
-
-        // Fetch Partnership
-        const { data: partnerData } = await supabase
-          .from("partnerships")
-          .select("*")
-          .or(`requester_id.eq.${session.user.id},recipient_id.eq.${session.user.id}`)
-          .maybeSingle();
-
-        if (partnerData) {
-          setPartnership(partnerData);
-          const partnerId = partnerData.requester_id === session.user.id 
-            ? partnerData.recipient_id 
-            : partnerData.requester_id;
-          
-          if (partnerData.status === 'accepted') {
-            const { data: pProfile } = await supabase.from("profiles").select("*").eq("user_id", partnerId).maybeSingle();
-            setPartnerProfile(pProfile);
-
-            // Fetch shared notes
-            const { data: notesData } = await supabase
-              .from("partner_notes")
-              .select("*")
-              .or(`author_id.eq.${session.user.id},recipient_id.eq.${session.user.id}`)
-              .order("created_at", { ascending: false })
-              .limit(10);
-            if (notesData) setNotes(notesData);
-          }
-        }
-
-        if (chartRes.data) {
-          const chicagoDateFormatter = new Intl.DateTimeFormat('en-CA', { 
-            timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' 
-          });
-          const days = [];
-          for (let i = 6; i >= 0; i--) {
-            const date = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Chicago" }));
-            date.setDate(date.getDate() - i);
-            const dateString = chicagoDateFormatter.format(date);
-            const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
-
-            const sessionsOnDay = chartRes.data.filter(
-              (s) => chicagoDateFormatter.format(new Date(s.finished_at)) === dateString
-            );
-
-            const totalWeight = sessionsOnDay.reduce((daySum, session) => {
-              const sessionVolume = (session.exercise_logs || []).reduce(
-                (acc, log) => acc + (log.skipped ? 0 : (log.weight_lbs || 0)),
-                0
-              );
-              return daySum + sessionVolume;
-            }, 0);
-
-            days.push({ day: dayName, volume: totalWeight });
-          }
-          setChartData(days);
-        }
-      }
-      setLoading(false);
-    };
-    fetchData();
-  }, []);
-
-  // Real-time listener for reactions and notes
-  useEffect(() => {
-    if (!profile?.user_id) return;
-
-    const reactionChannel = supabase
-      .channel('partner_updates')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'partner_reactions',
-          filter: `recipient_id=eq.${profile.user_id}`,
-        },
-        (payload) => {
-          notifications.show({
-            title: 'Reaction Received!',
-            message: payload.new.message || '❤️',
-            icon: <Heart size={16} fill="var(--mantine-color-pink-filled)" color="pink" />,
-            color: 'pink',
-          });
-
-          // Vibration for mobile users
-          if ("vibrate" in navigator) {
-            navigator.vibrate([100, 50, 100]);
-          }
-          
-          const btn = document.getElementById('heart-btn');
-          if (btn) {
-            btn.classList.add('heart-beat');
-            setTimeout(() => btn.classList.remove('heart-beat'), 800);
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'partner_notes',
-          filter: `recipient_id=eq.${profile.user_id}`,
-        },
-        (payload) => {
-          notifications.show({
-            title: 'New Note!',
-            message: payload.new.content,
-            icon: <MessageCircle size={16} />,
-            color: 'blue',
-          });
-          setNotes(prev => [payload.new, ...prev].slice(0, 10));
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(reactionChannel);
-    };
-  }, [profile?.user_id]);
-
-  const handleToggleNotifications = async () => {
-    const result = await requestPermission();
-    setNotifPermission(result);
-  };
-
-  const handleInvitePartner = async () => {
-    const email = inviteId.trim();
-    if (!email) {
-      notifications.show({ title: "Error", message: "Please enter a valid email address.", color: "red" });
-      return;
-    }
-
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (email.toLowerCase() === session.user.email.toLowerCase()) {
-      notifications.show({ title: "Error", message: "You cannot invite yourself!", color: "red" });
-      return;
-    }
-
-    // Find recipient_id by email
-    const { data: recipientProfile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id")
-      .ilike("email", email) // Case-insensitive lookup
-      .maybeSingle();
-
-    if (profileError) {
-      console.error("Search error:", profileError);
-      notifications.show({ 
-        title: "Search Error", 
-        message: "Could not search profiles. Check your RLS policies.", 
-        color: "red" 
+    if (!session?.user?.id) return;
+    let active = true;
+    supabase.from("workout_sessions")
+      .select("id,workout_type,focus,duration_seconds,finished_at,status,exercise_logs(weight_lbs,actual_reps,skipped)")
+      .eq("user_id", session.user.id)
+      .eq("status", "completed")
+      .order("finished_at", { ascending: false })
+      .limit(30)
+      .then(({ data, error: fetchError }) => {
+        if (!active) return;
+        if (fetchError) setError("Your training history couldn't be loaded.");
+        setSessions(data || []);
+        setLoading(false);
       });
-      return;
-    }
+    return () => { active = false; };
+  }, [session?.user?.id]);
 
-    if (!recipientProfile) {
-      notifications.show({ 
-        title: "Not Found", 
-        message: "No user found with that email. Make sure they have finished onboarding.", 
-        color: "red" 
-      });
-      return;
-    }
+  const summary = useMemo(() => {
+    const totalSeconds = sessions.reduce((sum, item) => sum + (Number(item.duration_seconds) || 0), 0);
+    const volume = sessions.reduce((sum, item) => sum + (item.exercise_logs || []).reduce((setSum, log) => {
+      if (log.skipped) return setSum;
+      return setSum + (Number(log.weight_lbs) || 0) * (Number(log.actual_reps) || 0);
+    }, 0), 0);
+    return { workouts: sessions.length, minutes: Math.round(totalSeconds / 60), volume };
+  }, [sessions]);
 
-    const { error } = await supabase.from("partnerships").insert({
-      requester_id: session.user.id,
-      recipient_id: recipientProfile.user_id,
-      status: "pending"
+  const weekData = useMemo(() => {
+    const formatter = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" });
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(startOfWeek());
+      date.setDate(date.getDate() + index);
+      const key = formatter.format(date);
+      const daySessions = sessions.filter((item) => item.finished_at && formatter.format(new Date(item.finished_at)) === key);
+      return {
+        label: new Intl.DateTimeFormat(undefined, { weekday: "narrow" }).format(date),
+        minutes: Math.round(daySessions.reduce((sum, item) => sum + (Number(item.duration_seconds) || 0), 0) / 60),
+      };
     });
-    if (!error) window.location.reload();
-  };
-
-  const handleUpdatePartnership = async (status) => {
-    const { error } = await supabase
-      .from("partnerships")
-      .update({ status })
-      .eq("id", partnership.id);
-    if (!error) window.location.reload();
-  };
-
-  const handleSendReaction = async () => {
-    if (!partnerProfile) return;
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    // For visual feedback, we could use a toast/notification system here
-    const { error } = await supabase.from("partner_reactions").insert({
-      sender_id: session.user.id,
-      recipient_id: partnerProfile.user_id,
-      type: 'heart',
-      message: "Thinking of you! 💪"
-    });
-
-    if (!error) {
-      const btn = document.getElementById('heart-btn');
-      if (btn) {
-        btn.classList.add('heart-beat');
-        notifications.show({ title: "Heart sent!", color: "pink", icon: <Heart size={14} fill="currentColor" /> });
-        setTimeout(() => btn.classList.remove('heart-beat'), 800);
-      }
-    }
-  };
-
-  const handleSendNote = async () => {
-    if (!noteContent.trim() || !partnerProfile) return;
-    setSendingNote(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    const { data, error } = await supabase.from("partner_notes").insert({
-      author_id: session.user.id,
-      recipient_id: partnerProfile.user_id,
-      content: noteContent
-    }).select().single();
-
-    setSendingNote(false);
-    if (!error && data) {
-      notifications.show({ title: "Note sent!", color: "green" });
-      // Add the new note to local state immediately for the sender
-      setNotes(prev => [data, ...prev].slice(0, 10));
-      setNoteContent("");
-      closeNote();
-    }
-  };
-  if (loading)
-    return (
-      <Center h="50vh">
-        <Loader />
-      </Center>
-    );
-
-  if (!profile) return <Text>No profile found.</Text>;
-
-  const formatDuration = (s) => {
-    const totalSeconds = Number(s) || 0;
-    const mins = Math.floor(totalSeconds / 60);
-    return mins > 0 ? `${mins}m` : `${s}s`;
-  };
+  }, [sessions]);
+  const maxMinutes = Math.max(1, ...weekData.map((item) => item.minutes));
 
   return (
-    <Stack gap="xl">
-      <Box>
-        <Title order={1} size="h2" fw={700}>
-          Profile
-        </Title>
-        <Text c="dimmed" mt={4}>
-          Overview of your fitness journey.
-        </Text>
-      </Box>
+    <Stack gap={32}>
+      <Group justify="space-between" align="flex-end">
+        <Box><Text className="eyebrow">Your training identity</Text><Title order={1} fz={{ base: 38, md: 50 }} lts={-2} mt={4}>Profile</Title></Box>
+        <Button component={Link} to="/settings" variant="light" leftSection={<Settings2 size={17} />}>Edit preferences</Button>
+      </Group>
 
-      {/* Profile Overview Card */}
-      <Paper
-        className="glass shadow-glow"
-        p={{ base: "xl", md: 32 }}
-        radius="32px"
-      >
-        <Group justify="space-between" align="center" wrap="nowrap">
-          <Group gap="xl">
-            <Avatar size={rem(80)} radius="xl" color="primary" variant="light">
-              {profile.name.charAt(0)}
+      <Paper className="surface-raised" p={{ base: "xl", md: 32 }}>
+        <Group justify="space-between" align="center" wrap="wrap">
+          <Group gap="lg">
+            <Avatar src={session?.user?.user_metadata?.avatar_url} size={82} radius={24} color="brand" c="dark.9">
+              {profile?.name?.charAt(0)}
             </Avatar>
             <Box>
-              <Title order={2} size="h3">
-                {profile.name}
-              </Title>
-              <Text c="dimmed">
-                {profile.age} years old • {profile.weight} lbs
-              </Text>
-              <Group gap="xs" mt="xs">
-                <Badge variant="dot" color="primary">
-                  Active Member
-                </Badge>
-                <CopyButton value={profile.user_id} timeout={2000}>
-                  {({ copied, copy }) => (
-                    <Tooltip label={copied ? 'Copied' : 'Copy My ID for Partner'} withArrow position="right">
-                      <ActionIcon
-                        variant="subtle"
-                        color={copied ? 'teal' : 'gray'}
-                        onClick={copy}
-                        size="sm"
-                      >
-                        {copied ? <Check size={14} /> : <Copy size={14} />}
-                      </ActionIcon>
-                    </Tooltip>
-                  )}
-                </CopyButton>
+              <Title order={2} fz={30}>{profile?.name}</Title>
+              <Text c="dimmed" mt={3}>{session?.user?.email}</Text>
+              <Group gap="xs" mt="sm">
+                <Badge variant="light" color="brand">{profile?.experience_level}</Badge>
+                <Badge variant="outline" color="gray">{profile?.gym_frequency} days / week</Badge>
               </Group>
             </Box>
           </Group>
-          <Button
-            component={Link}
-            to="/settings"
-            variant="light"
-            radius="xl"
-            leftSection={<Settings size={16} />}
-          >
-            Edit Profile
-          </Button>
+          <ThemeIcon size={54} color="brand" c="dark.9" radius="xl"><Dumbbell size={25} /></ThemeIcon>
         </Group>
       </Paper>
 
-      {/* Fitness Stats Grid */}
-      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-        <StatCard
-          icon={Target}
-          label="Goal"
-          value={profile.fitness_goal}
-          color="blue"
-        />
-        <StatCard
-          icon={Award}
-          label="Experience"
-          value={profile.experience_level}
-          color="purple"
-        />
-        <StatCard
-          icon={Activity}
-          label="Frequency"
-          value={`${profile.gym_frequency}x / week`}
-          color="green"
-        />
-      </SimpleGrid>
-
-      {/* Partnership Section */}
-      <Paper className="glass shadow-glow" p="xl" radius="32px">
-        <Title order={3} size="h4" mb="xs">Fitness Partner</Title>
-        {!partnership ? (
-          <Stack gap="sm">
-            <Text size="sm" c="dimmed">Connect with your partner to see their progress and send encouragement.</Text>
-            <Group align="flex-end">
-              <TextInput
-                placeholder="Partner's Email"
-                size="sm" 
-                style={{ flex: 1 }}
-                value={inviteId}
-                onChange={(e) => setInviteId(e.currentTarget.value)}
-              />
-              <Button variant="light" radius="xl" leftSection={<UserPlus size={16} />} onClick={handleInvitePartner}>
-                Invite
-              </Button>
-            </Group>
-          </Stack>
-        ) : partnership.status === 'pending' ? (
-          <Group justify="space-between">
-            <Box>
-              <Text fw={600}>
-                {partnership.requester_id === profile.user_id ? "Invitation Sent" : "Partner Invitation"}
-              </Text>
-              <Text size="xs" c="dimmed">
-                {partnership.requester_id === profile.user_id 
-                  ? "Waiting for them to accept..." 
-                  : "Someone wants to be your fitness partner!"}
-              </Text>
-            </Box>
-            {partnership.recipient_id === profile.user_id && (
-              <Group gap="xs">
-                <ActionIcon color="green" variant="light" radius="xl" size="lg" onClick={() => handleUpdatePartnership('accepted')}>
-                  <Check size={18} />
-                </ActionIcon>
-                <ActionIcon color="red" variant="light" radius="xl" size="lg" onClick={() => handleUpdatePartnership('declined')}>
-                  <X size={18} />
-                </ActionIcon>
-              </Group>
-            )}
-          </Group>
-        ) : (
-          <Group justify="space-between">
-            <Group>
-              <Avatar size="md" radius="xl" color="pink" variant="light">
-                {partnerProfile?.name?.charAt(0)}
-              </Avatar>
-              <Box>
-                <Text fw={600}>{partnerProfile?.name || "Partner"}</Text>
-                <Badge size="xs" variant="light" color="pink">Connected</Badge>
-              </Box>
-            </Group>
-            <Group gap="xs">
-              <ActionIcon 
-                id="heart-btn"
-                variant="filled" 
-                color="pink" 
-                radius="xl" 
-                size="lg" 
-                onClick={handleSendReaction}
-                style={{ transition: 'transform 0.2s ease' }}
-              >
-                <Heart size={18} fill="white" />
-              </ActionIcon>
-              <Button 
-                variant="subtle" 
-                size="xs" 
-                color="gray"
-                onClick={openNote}
-                leftSection={<Send size={14} />}
-              >
-                Send Note
-              </Button>
-            </Group>
-          </Group>
-        )}
-      </Paper>
-
-      {partnership?.status === 'accepted' && notes.length > 0 && (
-        <Paper className="glass" p="xl" radius="32px">
-          <Title order={3} size="h4" mb="md">Shared Notes</Title>
-          <Stack gap="xs">
-            {notes.map((note) => (
-              <Box 
-                key={note.id} 
-                p="md" 
-                className="glass-strong" 
-                style={{ 
-                  borderRadius: '16px',
-                  alignSelf: note.author_id === profile.user_id ? 'flex-end' : 'flex-start',
-                  maxWidth: '80%',
-                  border: note.author_id === profile.user_id ? '1px solid var(--mantine-color-primary-outline)' : 'none'
-                }}
-              >
-                <Text size="xs" fw={700} mb={4} c={note.author_id === profile.user_id ? "primary" : "pink"}>
-                  {note.author_id === profile.user_id ? profile.name : (partnerProfile?.name || "Partner")}
-                </Text>
-                <Text size="sm">{note.content}</Text>
-                <Text size="xs" c="dimmed" ta="right" mt={4}>{formatCST(note.created_at)}</Text>
-              </Box>
-            ))}
-          </Stack>
-        </Paper>
+      {error && <Alert color="orange">{error}</Alert>}
+      {loading ? <Center py="xl"><Loader color="brand" /></Center> : (
+        <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
+          <Stat icon={Activity} label="Sessions logged" value={summary.workouts} />
+          <Stat icon={Clock3} label="Minutes trained" value={summary.minutes} />
+          <Stat icon={Award} label="Volume moved" value={summary.volume.toLocaleString()} suffix="lb" />
+          <Stat icon={Target} label="Current goal" value={String(profile?.fitness_goal || "—").replaceAll("_", " ")} compact />
+        </SimpleGrid>
       )}
 
-      {/* Note Modal */}
-      <Modal opened={noteOpened} onClose={closeNote} title="Send a Note" centered radius="32px" classNames={{ content: 'glass-strong' }}>
-        <Stack>
-          <Textarea
-            placeholder="Write something sweet or encouraging..."
-            minRows={3}
-            value={noteContent}
-            onChange={(e) => setNoteContent(e.currentTarget.value)}
-          />
-          <Button 
-            fullWidth 
-            onClick={handleSendNote} 
-            loading={sendingNote}
-            disabled={!noteContent.trim()}
-          >
-            Send to {partnerProfile?.name || 'Partner'}
-          </Button>
-        </Stack>
-      </Modal>
-
-      {/* Notification Settings */}
-      <Paper className="glass shadow-glow" p="xl" radius="24px">
-        <Group justify="space-between">
-          <Group gap="md">
-            <ThemeIcon 
-              variant="light" 
-              color={notifPermission === "granted" ? "green" : "gray"} 
-              size="lg" 
-              radius="md"
-            >
-              {notifPermission === "granted" ? <Bell size={20} /> : <BellOff size={20} />}
-            </ThemeIcon>
-            <Box>
-              <Text fw={600}>Rest Timer Notifications</Text>
-              <Text size="xs" c="dimmed">
-                Get alerted when your rest period finishes.
-              </Text>
-            </Box>
+      <SimpleGrid cols={{ base: 1, md: 5 }} spacing="lg">
+        <Paper className="surface profile-chart" p="xl">
+          <Group justify="space-between" mb="xl">
+            <Box><Text className="eyebrow">Last 7 days</Text><Title order={2} fz="xl" mt={4}>Training minutes</Title></Box>
+            <CalendarDays size={20} color="var(--ink-soft)" />
           </Group>
-          <Button 
-            variant="outline" 
-            color={notifPermission === "granted" ? "green" : "primary"}
-            radius="xl"
-            onClick={handleToggleNotifications}
-            disabled={notifPermission === "granted"}
-          >
-            {notifPermission === "granted" ? "Enabled" : "Enable"}
-          </Button>
-        </Group>
-      </Paper>
+          <Group align="flex-end" justify="space-around" h={190} gap="sm" wrap="nowrap">
+            {weekData.map((item, index) => (
+              <Stack key={`${item.label}-${index}`} align="center" justify="flex-end" gap={7} h="100%" style={{ flex: 1 }}>
+                <Text size="xs" fw={800}>{item.minutes || ""}</Text>
+                <Box
+                  role="img"
+                  aria-label={`${item.minutes} training minutes`}
+                  w="100%"
+                  maw={44}
+                  h={`${Math.max(6, (item.minutes / maxMinutes) * 140)}px`}
+                  bg={item.minutes ? "var(--brand)" : "var(--surface-muted)"}
+                  style={{ borderRadius: "8px 8px 2px 2px", transition: "height 200ms ease" }}
+                />
+                <Text size="xs" c="dimmed" fw={700}>{item.label}</Text>
+              </Stack>
+            ))}
+          </Group>
+        </Paper>
 
-      {/* Weekly Volume Chart */}
-      <Paper className="glass shadow-glow" p="xl" radius="32px">
-        <Title order={3} size="h4" mb="xl">
-          Weekly Volume (lbs)
-        </Title>
-        <Box h={300}>
-          <BarChart
-            h={300}
-            data={chartData}
-            dataKey="day"
-            series={[
-              { name: "volume", color: "blue.6", label: "Weight Lifted" },
-            ]}
-            tickLine="y"
-            gridAxis="xy"
-            yAxisProps={{ width: 60 }}
-          />
-        </Box>
-      </Paper>
+        <Paper className="surface profile-settings" p="xl">
+          <Text className="eyebrow">Current setup</Text>
+          <Stack mt="xl" gap="lg">
+            <InfoRow label="Goal" value={String(profile?.fitness_goal || "—").replaceAll("_", " ")} />
+            <InfoRow label="Experience" value={profile?.experience_level} />
+            <InfoRow label="Session target" value={`${profile?.workout_duration} minutes`} />
+            <InfoRow label="Equipment" value={`${profile?.equipment?.length || 0} items`} />
+          </Stack>
+          <Button component={Link} to="/settings" variant="subtle" px={0} mt="xl" rightSection={<ArrowRight size={15} />}>Change setup</Button>
+        </Paper>
+      </SimpleGrid>
 
-      {/* Workout History Preview */}
       <Box>
-        <Group justify="space-between" mb="md">
-          <Title order={3} size="h4">
-            Recent History
-          </Title>
-          <Button component={Link} to="/history" variant="subtle" size="xs">
-            View All
-          </Button>
-        </Group>
+        <Group justify="space-between" mb="md"><Box><Text className="eyebrow">Recent work</Text><Title order={2} fz={28} mt={4}>Workout history</Title></Box><Button component={Link} to="/history" variant="subtle" rightSection={<ArrowRight size={16} />}>View all</Button></Group>
         <Stack gap="sm">
-          {history.length > 0 ? (
-            history.map((p) => (
-              <Paper key={p.id} className="glass" p="md" radius="xl">
-                <Group justify="space-between">
-                  <Group>
-                    <ThemeIcon variant="light" size="md">
-                      <FileText size={16} />
-                    </ThemeIcon>
-                    <Box>
-                      <Text size="sm" fw={600}>
-                        {p.workout_type}: {p.focus}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        {formatCST(p.finished_at || p.started_at)} • {formatDuration(p.duration_seconds || 0)}
-                      </Text>
-                    </Box>
-                  </Group>
-                  <Badge variant="outline" size="sm" color="green">
-                    Done
-                  </Badge>
-                </Group>
-              </Paper>
-            ))
-          ) : (
-            <Text c="dimmed" size="sm" ta="center" py="xl">
-              No workouts logged yet.
-            </Text>
-          )}
+          {sessions.slice(0, 3).map((item) => (
+            <UnstyledSession key={item.id} session={item} />
+          ))}
+          {!sessions.length && <Paper className="surface" p="xl"><Text c="dimmed">Complete your first workout and it will show up here.</Text></Paper>}
         </Stack>
       </Box>
     </Stack>
   );
 }
 
-function StatCard({ icon: Icon, label, value, color }) {
+function Stat({ icon: Icon, label, value, suffix, compact }) {
+  return <Paper className="surface" p="lg"><Group gap={7}><Icon size={15} color="var(--ink-soft)" /><Text className="eyebrow">{label}</Text></Group><Text className="metric-number" fz={compact ? 20 : 31} fw={850} mt="md" tt={compact ? "capitalize" : undefined}>{value}</Text>{suffix && <Text size="xs" c="dimmed">{suffix}</Text>}</Paper>;
+}
+
+function InfoRow({ label, value }) {
+  return <Group justify="space-between"><Text size="sm" c="dimmed">{label}</Text><Text size="sm" fw={750} tt="capitalize">{value}</Text></Group>;
+}
+
+function UnstyledSession({ session }) {
   return (
-    <Paper className="glass" p="lg" radius="24px">
-      <Group gap="sm" mb={4}>
-        <ThemeIcon variant="light" color={color} size="sm" radius="md">
-          <Icon size={14} />
-        </ThemeIcon>
-        <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-          {label}
-        </Text>
+    <Paper component={Link} to={`/history/${session.id}`} className="surface" p="lg" style={{ display: "block", color: "inherit", textDecoration: "none" }}>
+      <Group justify="space-between" wrap="nowrap">
+        <Group wrap="nowrap"><ThemeIcon variant="light" color="brand"><Dumbbell size={16} /></ThemeIcon><Box style={{ minWidth: 0 }}><Text fw={750} truncate>{session.workout_type}</Text><Text size="xs" c="dimmed" truncate>{session.focus || dateLabel(session.finished_at)}</Text></Box></Group>
+        <Box ta="right"><Text size="sm" fw={750}>{durationLabel(session.duration_seconds)}</Text><Text size="xs" c="dimmed">{dateLabel(session.finished_at)}</Text></Box>
       </Group>
-      <Text size="lg" fw={700} style={{ textTransform: "capitalize" }}>
-        {value}
-      </Text>
     </Paper>
   );
 }

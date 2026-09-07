@@ -32,6 +32,7 @@ out/
 .env
 .env.local
 .env.*.local
+/supabase password.txt
 
 # npm cache directory
 .npm

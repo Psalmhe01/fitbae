@@ -1,4 +1,12 @@
 {
+  "name": "fitbae-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix FitBae run dev",
+    "build": "npm --prefix FitBae run build",
+    "test": "npm --prefix FitBae run test",
+    "check": "npm --prefix FitBae run check"
+  },
   "dependencies": {
     "@mantine/notifications": "^9.2.1"
   }

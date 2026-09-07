@@ -1,560 +1,195 @@
-import { Link, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
-import { // Removed `useTheme` as it's not directly used in Onboarding.jsx
-  Container,
-  Stack,
-  Group,
-  Title,
-  Text,
-  Progress,
-  Paper,
-  TextInput,
-  NumberInput,
-  SegmentedControl,
-  Button,
-  SimpleGrid,
-  Box,
-  ThemeIcon,
-  Slider,
-  Chip,
-  UnstyledButton,
-  rem,
-  LoadingOverlay,
-  Image,
-  Avatar,
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Alert, Box, Button, Chip, Container, Group, LoadingOverlay, NumberInput,
+  Paper, Progress, SegmentedControl, SimpleGrid, Stack, Text, TextInput,
+  ThemeIcon, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { ThemeToggle } from "@/components/theme-toggle"; // Keep ThemeToggle for UI
-import { equipmentCategories } from "@/lib/mock-data";
-import { equipmentLibrary, getEquipmentById } from "@/lib/equipmentLibrary";
 import {
-  ArrowLeft,
-  ArrowRight,
-  Dumbbell,
-  Flame,
-  Sparkles,
-  Activity,
-  Scale,
-  Heart,
-  Check,
+  Activity, ArrowLeft, ArrowRight, Check, Dumbbell, Flame, Gauge,
+  Heart, Scale, ShieldCheck, Sparkles, Target,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase"; // Import Supabase client
+import { supabase } from "@/lib/supabase";
 import { generateWorkoutPlan } from "@/lib/gemini";
+import { FITNESS_GOAL_OPTIONS } from "@/lib/fitnessConfig";
+import { equipmentCategories } from "@/lib/equipmentLibrary";
+import { equipmentLibrary } from "@/lib/equipmentLibrary";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { BrandMark } from "@/components/BrandMark";
 
-const goals = [
-  { id: "muscle", label: "Build Muscle", icon: Dumbbell },
-  { id: "lose", label: "Lose Weight", icon: Flame },
-  { id: "flex", label: "Improve Flexibility", icon: Heart },
-  { id: "endurance", label: "Increase Endurance", icon: Activity },
-  { id: "maintain", label: "Maintain Fitness", icon: Scale },
-];
+const goalIcons = {
+  muscle: Dumbbell,
+  strength: Gauge,
+  lose: Flame,
+  endurance: Activity,
+  flexibility: Heart,
+  maintain: Scale,
+};
 
-function Onboarding() {
+export default function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false); // Loading state for API calls
-  const [errors, setErrors] = useState({});
-
-  // Step 1 states
+  const [loading, setLoading] = useState(false);
   const [name, setName] = useState("");
-  const [age, setAge] = useState(null);
+  const [age, setAge] = useState("");
   const [weightUnit, setWeightUnit] = useState("lbs");
-  const [weightValue, setWeightValue] = useState(null);
+  const [weight, setWeight] = useState("");
   const [heightUnit, setHeightUnit] = useState("ft");
-  const [heightFtValue, setHeightFtValue] = useState(null);
-  const [heightInValue, setHeightInValue] = useState(null);
-  const [heightCmValue, setHeightCmValue] = useState(null);
-  const [sex, setSex] = useState("male");
-  // Step 2 states (already existing)
-  const [goal, setGoal] = useState("muscle"); // Default to muscle
-  const [equipment, setEquipment] = useState(equipmentLibrary.map(eq => eq.id)); // Default to all equipment IDs
-  const [frequency, setFrequency] = useState([4]); // Default frequency
+  const [heightFeet, setHeightFeet] = useState("");
+  const [heightInches, setHeightInches] = useState("");
+  const [heightCm, setHeightCm] = useState("");
+  const [sex, setSex] = useState("prefer_not_to_say");
+  const [goal, setGoal] = useState("muscle");
+  const [equipment, setEquipment] = useState(equipmentLibrary.map((item) => item.id));
+  const [frequency, setFrequency] = useState("4");
   const [duration, setDuration] = useState("60");
   const [experience, setExperience] = useState("intermediate");
+  const [errors, setErrors] = useState({});
 
   useEffect(() => {
-    const prefillUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.user_metadata?.full_name) {
-        setName(user.user_metadata.full_name);
-      } else if (user?.user_metadata?.name) {
-        setName(user.user_metadata.name);
-      }
-    };
-    prefillUser();
-  }, []);
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) navigate("/", { replace: true });
+      const suggestedName = data.user?.user_metadata?.full_name || data.user?.user_metadata?.name;
+      if (suggestedName) setName(suggestedName);
+    });
+  }, [navigate]);
 
-  const toggleEquipment = (e) =>
-    setEquipment((prev) => // e is now the equipment ID
-      prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e], // Store IDs
-    );
+  const progress = step / 3 * 100;
+  const selectedEquipmentNames = useMemo(() => equipmentLibrary.filter((item) => equipment.includes(item.id)), [equipment]);
 
-  const handleContinue = () => {
-    const newErrors = {};
-    
-    // Basic validation for Step 1
-    if (!name.trim()) newErrors.name = "Name is required";
-    if (age === null) newErrors.age = "Age is required";
-    if (weightValue === null) newErrors.weight = "Weight is required";
-    
-    if (heightUnit === "ft") {
-      if (heightFtValue === null) newErrors.heightFt = "Required";
-      if (heightInValue === null) newErrors.heightIn = "Required";
-    } else {
-      if (heightCmValue === null) newErrors.heightCm = "Required";
-    }
-
-    setErrors(newErrors);
-    
-    if (Object.keys(newErrors).length === 0) {
-      setStep(2);
-    }
+  const nextFromBasics = () => {
+    const nextErrors = {};
+    if (!name.trim()) nextErrors.name = "Tell us what to call you.";
+    if (!Number(age) || Number(age) < 18 || Number(age) > 100) nextErrors.age = "Enter an age from 18 to 100.";
+    const weightLbs = weightUnit === "kg" ? Number(weight) * 2.20462 : Number(weight);
+    if (!weightLbs || weightLbs < 65 || weightLbs > 700) nextErrors.weight = "Enter a realistic weight.";
+    const cm = heightUnit === "ft" ? Number(heightFeet) * 30.48 + Number(heightInches || 0) * 2.54 : Number(heightCm);
+    if (!cm || cm < 120 || cm > 230) nextErrors.height = "Enter a height from 120–230 cm (about 4'–7'7\").";
+    setErrors(nextErrors);
+    if (!Object.keys(nextErrors).length) setStep(2);
   };
 
-  const handleGeneratePlan = async () => {
+  const nextFromTraining = () => {
+    setErrors({});
+    setStep(3);
+  };
+
+  const toggleEquipment = (id) => {
+    setEquipment((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  };
+
+  const generatePlan = async () => {
+    if (!equipment.length) {
+      setErrors({ equipment: "Choose at least one item. Select bodyweight-friendly accessories if that's what you have." });
+      return;
+    }
     setLoading(true);
+    setErrors({});
+    let previousProfile = null;
+    let profileSaved = false;
     try {
       const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        notifications.show({
-          title: "Authentication required",
-          message: "You must be logged in to generate a plan.",
-          color: "red",
-        });
-        navigate("/"); // Redirect to login/home if not logged in
-        return;
-      }
-
-      // Standardize weight to lbs
-      let weightLbs;
-      if (weightUnit === "kg") {
-        weightLbs = weightValue * 2.20462;
-      } else {
-        weightLbs = weightValue;
-      }
-
-      // Convert height to cm
-      let heightCm;
-      if (heightUnit === "ft") {
-        heightCm = (heightFtValue * 30.48) + (heightInValue * 2.54);
-      } else {
-        heightCm = heightCmValue;
-      }
-
+      if (!user) throw new Error("Your sign-in expired. Please sign in again.");
+      const { data: existingProfile, error: existingProfileError } = await supabase.from("profiles")
+        .select("user_id,name,email,age,weight,weight_unit,height_cm,sex,fitness_goal,equipment,gym_frequency,workout_duration,experience_level")
+        .eq("user_id", user.id).maybeSingle();
+      if (existingProfileError) throw existingProfileError;
+      previousProfile = existingProfile;
+      const weightLbs = weightUnit === "kg" ? Number(weight) * 2.20462 : Number(weight);
+      const normalizedHeight = heightUnit === "ft"
+        ? Number(heightFeet) * 30.48 + Number(heightInches || 0) * 2.54
+        : Number(heightCm);
       const profileData = {
         user_id: user.id,
-        name,
+        name: name.trim(),
         email: user.email,
-        age,
-        weight: weightLbs, // Store in lbs
-        weight_unit: "lbs", // Standardize unit in DB
-        height_cm: heightCm,
+        age: Number(age),
+        weight: Math.round(weightLbs * 10) / 10,
+        weight_unit: "lbs",
+        height_cm: Math.round(normalizedHeight * 10) / 10,
         sex,
         fitness_goal: goal,
         equipment,
-        gym_frequency: frequency[0], // Slider returns an array
-        workout_duration: parseInt(duration), // SegmentedControl returns string
+        gym_frequency: Number(frequency),
+        workout_duration: Number(duration),
         experience_level: experience,
       };
 
-      // Save/Update profile data
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .upsert(profileData, { onConflict: "user_id" }); // Use upsert to create or update
-
-      if (profileError) {
-        console.error("Error saving profile:", profileError);
-        notifications.show({
-          title: "Profile error",
-          message: "Failed to save profile information. Please try again.",
-          color: "red",
-        });
-        setLoading(false);
-        return;
-      }
-
-      // --- Call Gemini API ---
       const planJson = await generateWorkoutPlan(profileData);
-
-      // Save workout plan to database
+      const { error: profileError } = await supabase.from("profiles").upsert(profileData, { onConflict: "user_id" });
+      if (profileError) throw profileError;
+      profileSaved = true;
       const { error: planError } = await supabase.from("workout_plans").insert({
         user_id: user.id,
         plan_json: planJson,
-        fitness_goal: profileData.fitness_goal,
-        experience_level: profileData.experience_level,
+        fitness_goal: goal,
+        experience_level: experience,
       });
-
-      if (planError) {
-        console.error("Error saving workout plan:", planError);
-        notifications.show({
-          title: "Storage error",
-          message: "Plan generated, but we couldn't save it to your history.",
-          color: "orange",
-        });
-        setLoading(false);
-        return;
-      }
-
-      navigate("/dashboard");
+      if (planError) throw planError;
+      notifications.show({ title: "Your first week is ready", message: "You can swap any exercise before you start.", color: "green" });
+      navigate("/dashboard", { replace: true });
     } catch (error) {
-      console.error("An unexpected error occurred:", error);
-      notifications.show({
-        title: "Generation failed",
-        message: "An unexpected error occurred while creating your plan.",
-        color: "red",
-      });
+      if (profileSaved) {
+        if (previousProfile) {
+          await supabase.from("profiles").update(previousProfile).eq("user_id", previousProfile.user_id);
+        } else {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) await supabase.from("profiles").delete().eq("user_id", user.id);
+        }
+      }
+      notifications.show({ title: "We couldn't finish your plan", message: error.message || "Please try again.", color: "red", autoClose: 7000 });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Box className="bg-hero" style={{ minHeight: "100vh" }} py={32} px="md">
-      <Container size={rem(672)}>
-        <Group justify="space-between" mb="lg">
-          <Button
-            component={Link}
-            to="/"
-            variant="transparent"
-            color="gray"
-            leftSection={<ArrowLeft size={16} />}
-            px={0}
-          >
-            Back
-          </Button>
-          <ThemeToggle />
-        </Group>
+    <Box className="bg-hero" mih="100svh" py="lg">
+      <Container size="md">
+        <Group justify="space-between" mb={{ base: 32, md: 48 }}><BrandMark /><ThemeToggle /></Group>
+        <Box mb="lg"><Group justify="space-between" mb="xs"><Text className="eyebrow">Step {step} of 3</Text><Text size="xs" c="dimmed">{Math.round(progress)}%</Text></Group><Progress value={progress} color="brand" size="sm" /></Box>
 
-        <Box mb={32}>
-          <Text
-            c="dimmed"
-            size="xs"
-            fw={600}
-            tt="uppercase"
-            mb={8}
-            style={{ letterSpacing: "0.05em" }}
-          >
-            Step {step} of 2
-          </Text>
-          <Progress
-            value={step === 1 ? 50 : 100}
-            size="xs"
-            radius="xl"
-            transitionDuration={500}
-          />
-        </Box>
+        <Paper className="surface-raised" p={{ base: "lg", sm: 40 }} pos="relative">
+          <LoadingOverlay visible={loading} overlayProps={{ blur: 2, backgroundOpacity: 0.72 }} loaderProps={{ color: "brand" }} />
+          {step === 1 && (
+            <Stack gap={28}>
+              <Box><Text className="eyebrow">Start with your baseline</Text><Title order={1} fz={{ base: 34, sm: 44 }} lts={-1.5} mt={5}>A plan that fits you.</Title><Text c="dimmed" mt="sm">These details set sensible starting points. Exact measurements are not sent to the workout generator.</Text></Box>
+              <TextInput label="First name or nickname" value={name} onChange={(event) => setName(event.currentTarget.value)} error={errors.name} autoComplete="given-name" />
+              <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                <NumberInput label="Age" value={age} onChange={setAge} min={18} max={100} error={errors.age} />
+                <Box><Text size="sm" fw={600} mb={6}>Profile sex (optional)</Text><SegmentedControl fullWidth value={sex} onChange={setSex} data={[{ label: "Female", value: "female" }, { label: "Male", value: "male" }, { label: "Skip", value: "prefer_not_to_say" }]} /></Box>
+              </SimpleGrid>
+              <Box><Group justify="space-between" mb={6}><Text size="sm" fw={600}>Weight</Text><SegmentedControl size="xs" value={weightUnit} onChange={setWeightUnit} data={["lbs", "kg"]} /></Group><NumberInput aria-label={`Weight in ${weightUnit}`} value={weight} onChange={setWeight} min={1} rightSection={<Text size="xs" c="dimmed">{weightUnit}</Text>} error={errors.weight} /></Box>
+              <Box><Group justify="space-between" mb={6}><Text size="sm" fw={600}>Height</Text><SegmentedControl size="xs" value={heightUnit} onChange={setHeightUnit} data={["ft", "cm"]} /></Group>{heightUnit === "ft" ? <SimpleGrid cols={2}><NumberInput label="Feet" value={heightFeet} onChange={setHeightFeet} min={3} max={7} error={errors.height} /><NumberInput label="Inches" value={heightInches} onChange={setHeightInches} min={0} max={11} /></SimpleGrid> : <NumberInput aria-label="Height in centimeters" value={heightCm} onChange={setHeightCm} min={120} max={230} rightSection={<Text size="xs" c="dimmed">cm</Text>} error={errors.height} />}</Box>
+              <Button size="lg" onClick={nextFromBasics} rightSection={<ArrowRight size={18} />}>Choose training goals</Button>
+            </Stack>
+          )}
 
-        <Paper
-          className="glass shadow-glow"
-          radius="32px"
-          p={{ base: "xl", md: 40 }}
-          pos="relative" // For LoadingOverlay
-        >
-          {step === 1 ? (
-            <>
-              <Title order={1} size="h2" fw={700}>
-                Personal info
-              </Title>
-              <Text c="dimmed" size="sm" mt={4}>
-                Let's get to know you.
-              </Text>
+          {step === 2 && (
+            <Stack gap={30}>
+              <Box><Text className="eyebrow">Shape your week</Text><Title order={1} fz={{ base: 34, sm: 44 }} lts={-1.5} mt={5}>What are we building toward?</Title><Text c="dimmed" mt="sm">Pick the priority that matters most right now. You can change it later.</Text></Box>
+              <Box><Text size="sm" fw={700} mb="sm">Primary goal</Text><SimpleGrid cols={{ base: 2, sm: 3 }} spacing="sm">{FITNESS_GOAL_OPTIONS.map((option) => { const Icon = goalIcons[option.value] || Target; const active = goal === option.value; return <Chip key={option.value} checked={active} onChange={() => setGoal(option.value)} icon={<Check size={14} />} styles={{ label: { width: "100%", height: "100%", padding: 16 } }}><Stack align="flex-start" gap={8}><Icon size={20} /><Text size="sm" fw={700}>{option.label}</Text></Stack></Chip>; })}</SimpleGrid></Box>
+              <Box><Text size="sm" fw={700} mb="sm">Days per week</Text><SegmentedControl fullWidth value={frequency} onChange={setFrequency} data={["1", "2", "3", "4", "5", "6"].map((value) => ({ value, label: value }))} /></Box>
+              <Box><Text size="sm" fw={700} mb="sm">Time per session</Text><SegmentedControl fullWidth value={duration} onChange={setDuration} data={["30", "45", "60", "75", "90"].map((value) => ({ value, label: `${value}m` }))} /></Box>
+              <Box><Text size="sm" fw={700} mb="sm">Training experience</Text><SegmentedControl fullWidth value={experience} onChange={setExperience} data={[{ value: "beginner", label: "New" }, { value: "intermediate", label: "Regular" }, { value: "advanced", label: "Experienced" }]} /></Box>
+              <Group justify="space-between"><Button variant="subtle" color="gray" onClick={() => setStep(1)} leftSection={<ArrowLeft size={17} />}>Back</Button><Button size="lg" onClick={nextFromTraining} rightSection={<ArrowRight size={18} />}>Choose equipment</Button></Group>
+            </Stack>
+          )}
 
-              <Stack mt={32} gap="xl">
-                <TextInput
-                  label="Name"
-                  value={name}
-                  onChange={(event) => setName(event.currentTarget.value)}
-                  size="md"
-                  radius="md"
-                  error={errors.name}
-                />
-                <NumberInput
-                  label="Age"
-                  value={age}
-                  onChange={setAge}
-                  size="md"
-                  radius="md"
-                  error={errors.age}
-                />
-
-                <Field label="Biological sex">
-                  <SegmentedControl
-                    value={sex}
-                    onChange={setSex}
-                    data={[
-                      { label: "Male", value: "male" },
-                      { label: "Female", value: "female" },
-                    ]}
-                    fullWidth
-                    size="md"
-                  />
-                </Field>
-
-                <Field label="Weight">
-                  <Group grow gap="xs">
-                    <NumberInput
-                      value={weightValue}
-                      onChange={setWeightValue}
-                      size="md"
-                      radius="md"
-                      style={{ flex: 1 }}
-                      min={1}
-                      error={errors.weight}
-                    />
-                    <SegmentedControl
-                      value={weightUnit}
-                      onChange={setWeightUnit}
-                      data={["lbs", "kg"]}
-                      size="md"
-                      style={{ width: rem(120) }}
-                    />
-                  </Group>
-                </Field>
-
-                <Field label="Height">
-                  <Group grow gap="xs">
-                    {heightUnit === "ft" ? (
-                      <>
-                        <NumberInput
-                          value={heightFtValue}
-                          placeholder="ft"
-                          size="md"
-                          radius="md"
-                          onChange={setHeightFtValue}
-                          min={1}
-                          error={errors.heightFt}
-                        />
-                        <NumberInput
-                          value={heightInValue}
-                          placeholder="in"
-                          size="md"
-                          radius="md"
-                          onChange={setHeightInValue}
-                          min={0}
-                          max={11}
-                          error={errors.heightIn}
-                        />
-                      </>
-                    ) : (
-                      <NumberInput
-                        value={heightCmValue}
-                        placeholder="cm"
-                        size="md"
-                        radius="md"
-                        onChange={setHeightCmValue}
-                        min={1}
-                        error={errors.heightCm}
-                      />
-                    )}
-                    <SegmentedControl
-                      value={heightUnit}
-                      onChange={setHeightUnit}
-                      data={["ft", "cm"]}
-                      size="md"
-                      style={{ width: rem(120) }}
-                    />
-                  </Group>
-                </Field>
-              </Stack>
-
-              <Button
-                onClick={handleContinue}
-                fullWidth
-                size="lg"
-                radius="xl"
-                mt={40}
-                rightSection={<ArrowRight size={18} />}
-              >
-                Continue
-              </Button>
-            </>
-          ) : (
-            <>
-              <Title order={1} size="h2" fw={700}>
-                Fitness profile
-              </Title>
-              <Text c="dimmed" size="sm" mt={4}>
-                We'll tune your plan around these answers.
-              </Text>
-
-              <Stack mt={32} gap={40}>
-                <Field label="Fitness goal">
-                  <SimpleGrid cols={{ base: 2, md: 3 }} spacing="md">
-                    {goals.map((g) => {
-                      const Icon = g.icon;
-                      const active = goal === g.id;
-                      return (
-                        <UnstyledButton
-                          key={g.id}
-                          onClick={() => setGoal(g.id)}
-                          className="glass"
-                          style={{
-                            position: "relative",
-                            padding: rem(16),
-                            borderRadius: rem(16),
-                            transition: "all 0.2s ease",
-                            transform: active ? "translateY(-4px)" : "none",
-                            border: active
-                              ? `2px solid var(--mantine-color-primary-filled)`
-                              : "none",
-                            boxShadow: active
-                              ? "var(--mantine-shadow-glow)"
-                              : "none",
-                          }}
-                        >
-                          <Icon
-                            size={24}
-                            color={
-                              active
-                                ? `var(--mantine-color-primary-filled)`
-                                : "var(--mantine-color-dimmed)"
-                            }
-                          />
-                          <Text size="sm" fw={600} mt={8}>
-                            {g.label}
-                          </Text>
-                          {active && (
-                            <ThemeIcon
-                              size={20}
-                              radius="xl"
-                              style={{ position: "absolute", top: 8, right: 8 }}
-                            >
-                              <Check size={12} />
-                            </ThemeIcon>
-                          )}
-                        </UnstyledButton>
-                      );
-                    })}
-                  </SimpleGrid>
-                </Field>
-
-                <Field label="Available equipment">
-                  <Stack gap="lg">
-                    {Object.entries(equipmentCategories).map(([cat, items]) => (
-                      <Box key={cat}>
-                        <Text
-                          c="dimmed"
-                          size="xs"
-                          fw={700}
-                          tt="uppercase"
-                          mb="xs"
-                        >
-                          {cat}
-                        </Text>
-                        <Group gap={8} style={{ flexWrap: 'wrap' }}>
-                          {items.map((item) => { // item is now { id, name }
-                            const active = equipment.includes(item.id);
-                            const equip = getEquipmentById(item.id);
-                            return (
-                              <Chip
-                                key={item.id}
-                                checked={active}
-                                onChange={() => toggleEquipment(item.id)} // Pass ID to toggle
-                                size="sm"
-                              >
-                                <Group gap={6} wrap="nowrap">
-                                  {equip?.image_url && (
-                                    <Avatar src={equip.image_url} size="xs" radius="xs" />
-                                  )}
-                                  {item.name}
-                                </Group>
-                              </Chip>
-                            );
-                          })}
-                        </Group>
-                      </Box>
-                    ))}
-                  </Stack>
-                </Field>
-
-                <Field
-                  label={`Gym frequency — ${frequency[0]} day${frequency[0] > 1 ? "s" : ""}/week`}
-                >
-                  <Box px="md">
-                    <Slider
-                      min={1}
-                      max={6}
-                      step={1}
-                      value={frequency[0]}
-                      onChange={(v) => setFrequency([v])}
-                      label={null}
-                      marks={[1, 2, 3, 4, 5, 6].map((v) => ({
-                        value: v,
-                        label: v,
-                      }))}
-                    />
-                  </Box>
-                </Field>
-
-                <Field label="Workout duration per session">
-                  <SegmentedControl
-                    value={duration}
-                    onChange={setDuration}
-                    data={["30", "45", "60", "90"].map((v) => ({
-                      label: `${v} min`,
-                      value: v,
-                    }))}
-                    fullWidth
-                    size="md"
-                  />
-                </Field>
-
-                <Field label="Experience level">
-                  <SegmentedControl
-                    value={experience}
-                    onChange={setExperience}
-                    data={[
-                      { label: "Beginner", value: "beginner" },
-                      { label: "Intermediate", value: "intermediate" },
-                      { label: "Advanced", value: "advanced" },
-                    ]}
-                    fullWidth
-                    size="md"
-                  />
-                </Field>
-              </Stack>
-
-              <Group mt={40} gap="md">
-                <Button
-                  variant="outline"
-                  onClick={() => setStep(1)}
-                  size="lg"
-                  radius="xl"
-                  px="xl"
-                >
-                  <ArrowLeft size={18} />
-                </Button>
-                <Button
-                  onClick={handleGeneratePlan}
-                  size="lg"
-                  radius="xl"
-                  style={{ flex: 1 }}
-                  className="shadow-glow"
-                  leftSection={<Sparkles size={18} />}
-                  loading={loading}
-                >
-                  Generate My Plan
-                </Button>
-              </Group>
-            </>
+          {step === 3 && (
+            <Stack gap={28}>
+              <Box><Text className="eyebrow">Make it practical</Text><Title order={1} fz={{ base: 34, sm: 44 }} lts={-1.5} mt={5}>What can you use?</Title><Text c="dimmed" mt="sm">Your plan will be restricted to this selection. Busy gym later? Swap a single movement without rebuilding the week.</Text></Box>
+              <Group><Button size="xs" variant="light" onClick={() => setEquipment(equipmentLibrary.map((item) => item.id))}>Select all</Button><Button size="xs" variant="subtle" color="gray" onClick={() => setEquipment([])}>Clear</Button><Badge variant="outline" color="gray">{selectedEquipmentNames.length} selected</Badge></Group>
+              <Stack gap="lg">{Object.entries(equipmentCategories).map(([category, items]) => <Box key={category}><Text className="eyebrow" mb="xs">{category}</Text><Group gap={7}>{items.map((item) => <Chip key={item.id} checked={equipment.includes(item.id)} onChange={() => toggleEquipment(item.id)} size="sm">{item.name}</Chip>)}</Group></Box>)}</Stack>
+              {errors.equipment && <Alert color="red">{errors.equipment}</Alert>}
+              <Alert icon={<ShieldCheck size={18} />} color="brand" title="A careful first draft">Starting loads are suggestions. Stop for sharp pain, dizziness, or loss of control, and ask a qualified professional when you're unsure.</Alert>
+              <Group justify="space-between"><Button variant="subtle" color="gray" onClick={() => setStep(2)} leftSection={<ArrowLeft size={17} />}>Back</Button><Button size="lg" color="brand" c="dark.9" onClick={generatePlan} leftSection={<Sparkles size={18} />}>Build my week</Button></Group>
+            </Stack>
           )}
         </Paper>
-        <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ radius: "sm", blur: 2 }} />
+        <Text ta="center" size="xs" c="dimmed" mt="lg">You stay in control. Every generated movement can be reviewed and replaced.</Text>
       </Container>
     </Box>
-  );
-}
-
-export default Onboarding;
-
-function Field({ label, children }) {
-  return (
-    <Stack gap={8}>
-      <Text size="sm" fw={600}>
-        {label}
-      </Text>
-      {children}
-    </Stack>
   );
 }

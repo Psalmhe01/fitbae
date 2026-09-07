@@ -17,7 +17,7 @@ export const notifyRestComplete = () => {
     ) {
       new Notification("Rest Period Over!", {
         body: "Time to start your next set! Let's go.",
-        icon: "/favicon.ico",
+        icon: "/favicon.svg",
         silent: false,
       });
     }
@@ -56,6 +56,9 @@ const playNotificationSound = () => {
 
     oscillator.start();
     oscillator.stop(audioCtx.currentTime + 0.5);
+    oscillator.addEventListener("ended", () => audioCtx.close().catch(() => {}), {
+      once: true,
+    });
   } catch (err) {
     console.warn("Audio notification failed:", err);
   }

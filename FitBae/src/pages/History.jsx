@@ -1,171 +1,104 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useOutletContext } from "react-router-dom";
 import {
-  Stack,
-  Title,
-  Text,
-  Paper,
-  ThemeIcon,
-  Badge,
-  Button,
-  Group,
-  Box,
-  Loader,
-  Center,
+  Alert, Badge, Box, Center, Group, Loader, Paper, SimpleGrid, Stack,
+  Text, ThemeIcon, Title,
 } from "@mantine/core";
-import { FileText, Calendar, Sparkles } from "lucide-react";
+import { ArrowUpRight, CalendarDays, CheckCircle2, Clock3, Dumbbell, TrendingUp } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-// Helper to format date in MM/DD hh:mm AM/PM CST
-const formatCST = (dateString) => {
-  if (!dateString) return "";
-  const date = new Date(dateString);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'America/Chicago',
-  }).formatToParts(date);
-  const p = parts.reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
-  return `${p.month}/${p.day} ${p.hour}:${p.minute} ${p.dayPeriod}`;
+const formatDate = (value) => value ? new Intl.DateTimeFormat(undefined, {
+  weekday: "short", month: "short", day: "numeric", year: "numeric",
+}).format(new Date(value)) : "Date unavailable";
+
+const formatDuration = (seconds = 0) => {
+  const mins = Math.round(Number(seconds) / 60);
+  return mins < 1 ? "<1 min" : `${mins} min`;
 };
 
 export default function HistoryPage() {
-  const navigate = useNavigate();
+  const { session } = useOutletContext();
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
   useEffect(() => {
-    const fetchHistory = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session) {
-        const { data } = await supabase
-          .from("workout_sessions")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .order("started_at", { ascending: false });
+    if (!session?.user?.id) return;
+    let active = true;
+    supabase.from("workout_sessions").select("*")
+      .eq("user_id", session.user.id)
+      .eq("status", "completed")
+      .order("started_at", { ascending: false })
+      .limit(100)
+      .then(({ data, error: fetchError }) => {
+        if (!active) return;
+        if (fetchError) setError("We couldn't load your workout history.");
         setHistory(data || []);
-      }
-      setLoading(false);
-    };
-    fetchHistory();
-  }, []);
+        setLoading(false);
+      });
+    return () => { active = false; };
+  }, [session?.user?.id]);
 
-  const formatDuration = (s) => {
-    const mins = Math.floor(s / 60);
-    return mins > 0 ? `${mins}m` : `${s}s`;
-  };
-
-  if (loading)
-    return (
-      <Center h="50vh">
-        <Loader />
-      </Center>
-    );
-
-  const empty = history.length === 0;
+  const summary = useMemo(() => ({
+    completed: history.filter((item) => item.status === "completed").length,
+    minutes: Math.round(history.reduce((sum, item) => sum + (Number(item.duration_seconds) || 0), 0) / 60),
+    latest: history.find((item) => item.status === "completed")?.finished_at,
+  }), [history]);
 
   return (
-    <Stack gap="xl">
-      <Box>
-        <Title order={1} size="h2" fw={700}>
-          History
-        </Title>
-        <Text c="dimmed" mt={4}>
-          Every plan you've ever generated.
-        </Text>
-      </Box>
+    <Stack gap={32}>
+      <Box><Text className="eyebrow">The work adds up</Text><Title order={1} fz={{ base: 38, md: 50 }} lts={-2} mt={4}>Progress</Title><Text c="dimmed" mt="xs">Every completed session, with the numbers you actually logged.</Text></Box>
 
-      {empty ? (
-        <Paper className="glass" radius="32px" p={{ base: "xl", md: 48 }}>
-          <Stack align="center" gap="md">
-            <ThemeIcon variant="light" size={64} radius="xl">
-              <Sparkles size={32} />
-            </ThemeIcon>
-            <Box ta="center">
-              <Title order={3}>No workouts yet</Title>
-              <Text c="dimmed" size="sm" mt={4}>
-                Start your first session from the dashboard!
-              </Text>
-            </Box>
-            <Button
-              radius="xl"
-              size="md"
-              mt="md"
-              onClick={() => navigate("/dashboard")}
-            >
-              Go to Dashboard
-            </Button>
-          </Stack>
-        </Paper>
-      ) : (
-        <Stack gap="sm">
-          {history.map((p) => (
-            <Paper
-              key={p.id}
-              className="glass"
-              radius="xl"
-              onClick={() => navigate(`/history/${p.id}`)}
-              p={{ base: "md", sm: "lg" }}
-              style={{ transition: "all 0.2s ease", cursor: "pointer" }}
-            >
-              <Group justify="space-between" align="center" wrap="nowrap">
-                <Group
-                  align="center"
-                  gap={{ base: "sm", sm: "md" }}
-                  style={{ flex: 1, minWidth: 0 }}
-                  wrap="nowrap"
-                >
-                  <ThemeIcon
-                    variant="light"
-                    size={{ base: 40, sm: 48 }}
-                    radius="lg"
-                    style={{ flexShrink: 0 }}
+      {error && <Alert color="red">{error}</Alert>}
+      {loading ? <Center mih="45vh"><Loader color="brand" /></Center> : (
+        <>
+          <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+            <Summary icon={CheckCircle2} label="Completed" value={summary.completed} suffix="sessions" />
+            <Summary icon={Clock3} label="Training time" value={summary.minutes} suffix="minutes" />
+            <Summary icon={CalendarDays} label="Last trained" value={summary.latest ? formatDate(summary.latest).split(",")[0] : "—"} compact />
+          </SimpleGrid>
+
+          <Box>
+            <Group justify="space-between" mb="md"><Title order={2} fz={26}>Session log</Title><Badge variant="outline" color="gray">{history.length}{history.length === 100 ? " recent" : " total"}</Badge></Group>
+            {history.length ? (
+              <Stack gap="sm">
+                {history.map((item) => (
+                  <Paper
+                    component={Link}
+                    to={`/history/${item.id}`}
+                    key={item.id}
+                    className="surface"
+                    p={{ base: "md", sm: "lg" }}
+                    style={{ color: "inherit", textDecoration: "none", display: "block" }}
                   >
-                    <FileText size={20} />
-                  </ThemeIcon>
-                  <Box style={{ minWidth: 0 }}>
-                    <Group gap="xs" mb={2} wrap="nowrap">
-                      <Badge
-                        variant="light"
-                        radius="xl"
-                        size="xs"
-                        style={{ flexShrink: 0 }}
-                      >
-                        {p.workout_type}
-                      </Badge>
-                      <Group gap={4} visibleFrom="xs" wrap="nowrap">
-                        <Calendar
-                          size={12}
-                          color="var(--mantine-color-dimmed)"
-                        />
-                        <Text c="dimmed" size="xs" truncate>
-                          {formatCST(p.finished_at || p.started_at)}
-                        </Text>
+                    <Group justify="space-between" wrap="nowrap">
+                      <Group gap="md" wrap="nowrap" style={{ minWidth: 0 }}>
+                        <ThemeIcon variant="light" color={item.status === "completed" ? "brand" : "gray"} size={46} radius="md"><Dumbbell size={20} /></ThemeIcon>
+                        <Box style={{ minWidth: 0 }}>
+                          <Group gap="xs"><Text fw={800} truncate>{item.workout_type || "Workout"}</Text><Badge size="xs" variant="light" color={item.status === "completed" ? "green" : "gray"}>{item.status}</Badge></Group>
+                          <Text size="sm" c="dimmed" truncate>{item.focus || "General training"}</Text>
+                          <Text size="xs" c="dimmed" mt={4}>{formatDate(item.finished_at || item.started_at)} · {formatDuration(item.duration_seconds)}</Text>
+                        </Box>
                       </Group>
+                      <ArrowUpRight size={19} color="var(--ink-soft)" />
                     </Group>
-                    <Text size="sm" fw={500} truncate="end">
-                      {p.focus}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      Duration: {formatDuration(p.duration_seconds || 0)}
-                    </Text>
-                    <Text c="dimmed" size="xs" hiddenFrom="xs" mt={2}>
-                      {formatCST(p.finished_at || p.started_at)}
-                    </Text>
-                  </Box>
-                </Group>
-                <Badge color={p.status === "completed" ? "green" : "gray"}>
-                  {p.status}
-                </Badge>
-              </Group>
-            </Paper>
-          ))}
-        </Stack>
+                  </Paper>
+                ))}
+              </Stack>
+            ) : (
+              <Paper className="surface-raised" p={{ base: "xl", md: 48 }}>
+                <ThemeIcon variant="light" color="brand" size={54}><TrendingUp size={25} /></ThemeIcon>
+                <Title order={3} mt="lg">Your first entry starts with one set.</Title>
+                <Text c="dimmed" mt="xs">Start a workout from Today. Once you finish, the honest numbers will live here.</Text>
+              </Paper>
+            )}
+          </Box>
+        </>
       )}
     </Stack>
   );
+}
+
+function Summary({ icon: Icon, label, value, suffix, compact }) {
+  return <Paper className="surface" p="lg"><Group gap="xs"><Icon size={15} color="var(--ink-soft)" /><Text className="eyebrow">{label}</Text></Group><Text className="metric-number" fw={850} fz={compact ? 22 : 34} mt="md">{value}</Text>{suffix && <Text c="dimmed" size="xs">{suffix}</Text>}</Paper>;
 }

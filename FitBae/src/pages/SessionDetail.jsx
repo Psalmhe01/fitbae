@@ -1,241 +1,106 @@
-import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import {
-  Stack,
-  Title,
-  Text,
-  Paper,
-  Group,
-  Button,
-  Box,
-  Loader,
-  Image,
-  Center,
-  ThemeIcon,
-  Divider,
-  Badge,
-  Anchor,
+  Alert, Badge, Box, Button, Center, Divider, Group, Loader, Paper,
+  SimpleGrid, Stack, Text, ThemeIcon, Title,
 } from "@mantine/core";
-import { ArrowLeft, Calendar, Clock, Dumbbell, Activity } from "lucide-react";
-import { getEquipmentById } from "@/lib/equipmentLibrary";
+import { ArrowLeft, CalendarDays, Check, Clock3, Dumbbell, RotateCcw, Weight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-// Helper to format date in MM/DD hh:mm AM/PM CST
-const formatCST = (dateString) => {
-  if (!dateString) return "";
-  const date = new Date(dateString);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'America/Chicago',
-  }).formatToParts(date);
-  const p = parts.reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
-  return `${p.month}/${p.day} ${p.hour}:${p.minute} ${p.dayPeriod}`;
-};
+const formatDateTime = (value) => value ? new Intl.DateTimeFormat(undefined, {
+  weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
+}).format(new Date(value)) : "Date unavailable";
 
 export default function SessionDetailPage() {
   const { sessionId } = useParams();
+  const { session: authSession } = useOutletContext();
   const navigate = useNavigate();
-  const [session, setSession] = useState(null);
+  const [workoutSession, setWorkoutSession] = useState(null);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const fetchData = async () => {
-      const [sessionRes, logsRes] = await Promise.all([
-        supabase
-          .from("workout_sessions")
-          .select("*")
-          .eq("id", sessionId)
-          .single(),
-        supabase
-          .from("exercise_logs")
-          .select("*")
-          .eq("session_id", sessionId)
-          .order("completed_at", { ascending: true }),
-      ]);
-
-      if (sessionRes.data) setSession(sessionRes.data);
-      if (logsRes.data) setLogs(logsRes.data);
+    if (!authSession?.user?.id) return;
+    let active = true;
+    Promise.all([
+      supabase.from("workout_sessions").select("*").eq("id", sessionId).eq("user_id", authSession.user.id).maybeSingle(),
+      supabase.from("exercise_logs").select("*").eq("session_id", sessionId).eq("user_id", authSession.user.id).order("completed_at", { ascending: true }),
+    ]).then(([sessionResult, logsResult]) => {
+      if (!active) return;
+      if (sessionResult.error || logsResult.error) setError("We couldn't load this session.");
+      setWorkoutSession(sessionResult.data || null);
+      setLogs((logsResult.data || []).sort((a, b) => String(a.exercise_name).localeCompare(String(b.exercise_name)) || (a.set_number || 0) - (b.set_number || 0)));
       setLoading(false);
-    };
-    fetchData();
-  }, [sessionId]);
+    });
+    return () => { active = false; };
+  }, [authSession?.user?.id, sessionId]);
 
-  if (loading)
-    return (
-      <Center h="50vh">
-        <Loader />
-      </Center>
-    );
-  if (!session)
-    return (
-      <Center h="50vh">
-        <Text>Session not found.</Text>
-      </Center>
-    );
+  const grouped = useMemo(() => logs.reduce((result, log) => {
+    const name = log.exercise_name || "Exercise";
+    if (!result[name]) result[name] = [];
+    result[name].push(log);
+    return result;
+  }, {}), [logs]);
+  const completedLogs = logs.filter((log) => !log.skipped);
+  const volume = completedLogs.reduce((sum, log) => {
+    if (log.actual_unit && log.actual_unit !== "reps") return sum;
+    return sum + (Number(log.weight_lbs) || 0) * (Number(log.actual_reps) || 0);
+  }, 0);
+  const minutes = Math.round((Number(workoutSession?.duration_seconds) || 0) / 60);
 
-  // Group logs by exercise name
-  const groupedLogs = logs.reduce((acc, log) => {
-    if (!acc[log.exercise_name]) acc[log.exercise_name] = [];
-    acc[log.exercise_name].push(log);
-    return acc;
-  }, {});
-
-  const formatDuration = (s) => {
-    const mins = Math.floor(s / 60);
-    const secs = s % 60;
-    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-  };
+  if (loading) return <Center mih="55vh"><Loader color="brand" /></Center>;
+  if (error) return <Alert color="red">{error}</Alert>;
+  if (!workoutSession) return <Alert color="orange" title="Session not found">It may have been removed, or it doesn't belong to this account.<Button variant="subtle" color="orange" mt="sm" onClick={() => navigate("/history")}>Back to progress</Button></Alert>;
 
   return (
-    <Stack gap="xl">
+    <Stack gap={32}>
       <Box>
-        <Anchor
-          component={Link}
-          to="/history"
-          size="sm"
-          mb="xs"
-          style={{ display: "flex", alignItems: "center", gap: 4 }}
-        >
-          <ArrowLeft size={14} /> Back to History
-        </Anchor>
-        <Title order={1} size="h2">
-          {session.workout_type}
-        </Title>
-        <Text c="dimmed">{session.focus}</Text>
+        <Button component={Link} to="/history" variant="subtle" color="gray" px={0} leftSection={<ArrowLeft size={16} />}>Back to progress</Button>
+        <Text className="eyebrow" mt="xl">Completed session</Text>
+        <Group justify="space-between" align="flex-end" mt={4}>
+          <Box><Title order={1} fz={{ base: 38, md: 50 }} lts={-2}>{workoutSession.workout_type}</Title><Text c="dimmed" mt={5}>{workoutSession.focus}</Text></Box>
+          <Badge color="green" variant="light" size="lg" leftSection={<Check size={13} />}>{workoutSession.status}</Badge>
+        </Group>
       </Box>
 
-      <Paper className="glass" p="lg" radius="xl">
-        <Group grow>
-          <Box>
-            <Group gap={6} mb={4}>
-              <Calendar size={14} color="var(--mantine-color-dimmed)" />
-              <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-                Date
-              </Text>
-            </Group>
-            <Text fw={600}>
-              {formatCST(session.finished_at || session.started_at)}
-            </Text>
-          </Box>
-          <Box>
-            <Group gap={6} mb={4}>
-              <Clock size={14} color="var(--mantine-color-dimmed)" />
-              <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-                Duration
-              </Text>
-            </Group>
-            <Text fw={600}>{formatDuration(session.duration_seconds)}</Text>
-          </Box>
-          <Box>
-            <Group gap={6} mb={4}>
-              <Activity size={14} color="var(--mantine-color-dimmed)" />
-              <Text size="xs" fw={700} tt="uppercase" c="dimmed">
-                Status
-              </Text>
-            </Group>
-            <Badge color="green" variant="light">
-              {session.status}
-            </Badge>
-          </Box>
-        </Group>
-      </Paper>
+      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+        <Metric icon={Clock3} label="Duration" value={`${minutes || "<1"} min`} />
+        <Metric icon={Weight} label="Training volume" value={`${volume.toLocaleString()} lb`} />
+        <Metric icon={Dumbbell} label="Sets completed" value={`${completedLogs.length}`} />
+      </SimpleGrid>
 
-      <Stack gap="md">
-        {Object.entries(groupedLogs).map(([name, exerciseLogs]) => (
-          <Paper key={name} className="glass" p="xl" radius="32px">
-            <Group justify="space-between" align="flex-start" mb="md">
-              <Group align="center">
-                {exerciseLogs[0]?.equipment_id && (
-                  <Image
-                    src={
-                      getEquipmentById(exerciseLogs[0].equipment_id)?.image_url
-                    }
-                    alt={getEquipmentById(exerciseLogs[0].equipment_id)?.name}
-                    w={40}
-                    h={40}
-                    fallbackSrc="https://placehold.co/40?text=?"
-                    style={{ objectFit: "contain" }}
-                  />
-                )}
-                <Title order={3} size="h4">
-                  {name}
-                </Title>
-              </Group>
-              {exerciseLogs[0]?.muscle_group && (
-                <Badge variant="light" size="sm">
-                  {exerciseLogs[0].muscle_group}
-                </Badge>
-              )}
-            </Group>
-            <Stack gap="xs">
-              <Group px="xs">
-                <Text size="xs" fw={700} c="dimmed" style={{ width: 40 }}>
-                  SET
-                </Text>
-                <Text size="xs" fw={700} c="dimmed" style={{ flex: 1 }}>
-                  WEIGHT
-                </Text>
-                <Text
-                  size="xs"
-                  fw={700}
-                  c="dimmed"
-                  style={{ width: 60 }}
-                  ta="right"
-                >
-                  REPS
-                </Text>
-              </Group>
-              <Divider opacity={0.3} />
+      <Paper className="surface" p="lg"><Group gap="sm"><CalendarDays size={17} color="var(--ink-soft)" /><Text size="sm" fw={700}>{formatDateTime(workoutSession.finished_at || workoutSession.started_at)}</Text></Group></Paper>
+
+      <Box>
+        <Text className="eyebrow">Set by set</Text>
+        <Stack gap="md" mt="md">
+          {Object.entries(grouped).map(([name, exerciseLogs], exerciseIndex) => (
+            <Paper key={name} className="surface-raised" p={{ base: "lg", md: "xl" }}>
+              <Group justify="space-between" mb="lg"><Group gap="md"><ThemeIcon color="brand" variant="light" radius="md">{String(exerciseIndex + 1).padStart(2, "0")}</ThemeIcon><Box><Title order={3} fz="xl">{name}</Title>{exerciseLogs[0]?.muscle_group && <Text size="xs" c="dimmed">{exerciseLogs[0].muscle_group}</Text>}</Box></Group><Badge variant="outline" color="gray">{exerciseLogs.filter((log) => !log.skipped).length}/{exerciseLogs.length} sets</Badge></Group>
+              <Group px="sm" mb="xs"><Text className="eyebrow" w={50}>Set</Text><Text className="eyebrow" style={{ flex: 1 }}>Load</Text><Text className="eyebrow" w={90} ta="right">{formatUnit(exerciseLogs[0]?.actual_unit)}</Text></Group>
+              <Divider />
               {exerciseLogs.map((log) => (
-                <Group
-                  key={log.id}
-                  px="xs"
-                  py={4}
-                  style={{ opacity: log.skipped ? 0.5 : 1 }}
-                >
-                  <Text size="sm" fw={700} style={{ width: 40 }}>
-                    {log.set_number}
-                  </Text>
-                  <Group gap={4} style={{ flex: 1 }}>
-                    <Dumbbell
-                      size={14}
-                      color="var(--mantine-color-primary-filled)"
-                    />
-                    <Text size="sm" fw={600}>
-                      {log.weight_lbs} lbs
-                    </Text>
-                  </Group>
-                  <Box style={{ width: 60 }} ta="right">
-                    {log.skipped ? (
-                      <Badge size="xs" color="gray">
-                        SKIPPED
-                      </Badge>
-                    ) : (
-                      <Text size="sm" fw={700}>
-                        {log.actual_reps}
-                      </Text>
-                    )}
-                  </Box>
+                <Group key={log.id || `${name}-${log.set_number}`} px="sm" py="sm" style={{ opacity: log.skipped ? 0.48 : 1, borderBottom: "1px solid var(--line)" }}>
+                  <Text fw={800} w={50}>{log.set_number}</Text><Text style={{ flex: 1 }}>{Number(log.weight_lbs) || 0} lb</Text><Box w={90} ta="right">{log.skipped ? <Badge size="xs" color="gray">Skipped</Badge> : <Text fw={800}>{log.actual_value ?? log.actual_reps}</Text>}</Box>
                 </Group>
               ))}
-            </Stack>
-          </Paper>
-        ))}
-      </Stack>
+            </Paper>
+          ))}
+          {!logs.length && <Paper className="surface" p="xl"><Text c="dimmed">No set details were saved for this session.</Text></Paper>}
+        </Stack>
+      </Box>
 
-      {session.notes && (
-        <Paper className="glass" p="lg" radius="xl">
-          <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="xs">
-            Session Notes
-          </Text>
-          <Text size="sm">{session.notes}</Text>
-        </Paper>
-      )}
+      <Button component={Link} to="/plan" state={{ day: workoutSession.day }} variant="light" leftSection={<RotateCcw size={17} />}>Open this training day</Button>
     </Stack>
   );
+}
+
+function Metric({ icon: Icon, label, value }) {
+  return <Paper className="surface" p="lg"><Group gap="xs"><Icon size={15} color="var(--ink-soft)" /><Text className="eyebrow">{label}</Text></Group><Text className="metric-number" fz={28} fw={850} mt="md">{value}</Text></Paper>;
+}
+
+function formatUnit(unit) {
+  const labels = { seconds: "Seconds", minutes: "Minutes", meters: "Meters", kilometers: "Kilometers", miles: "Miles" };
+  return labels[unit] || "Reps";
 }
