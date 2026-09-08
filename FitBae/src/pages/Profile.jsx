@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import {
-  Alert, Avatar, Badge, Box, Button, Center, Group, Loader, Paper,
+  Alert, Badge, Box, Button, Center, Group, Loader, Paper,
   SimpleGrid, Stack, Text, ThemeIcon, Title,
 } from "@mantine/core";
 import { Activity, ArrowRight, Award, CalendarDays, Clock3, Dumbbell, Settings2, Target } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { getFitnessGoal } from "@/lib/fitnessConfig";
+import { ProfileAvatar } from "@/components/ProfileAvatar";
 
 const dateLabel = (value) => new Intl.DateTimeFormat(undefined, {
   month: "short", day: "numeric", year: "numeric",
@@ -81,9 +83,7 @@ export default function ProfilePage() {
       <Paper className="surface-raised" p={{ base: "xl", md: 32 }}>
         <Group justify="space-between" align="center" wrap="wrap">
           <Group gap="lg">
-            <Avatar src={session?.user?.user_metadata?.avatar_url} size={82} radius={24} color="brand" c="dark.9">
-              {profile?.name?.charAt(0)}
-            </Avatar>
+            <ProfileAvatar user={session?.user} name={profile?.name} size={82} radius={24} />
             <Box>
               <Title order={2} fz={30}>{profile?.name}</Title>
               <Text c="dimmed" mt={3}>{session?.user?.email}</Text>
@@ -100,10 +100,10 @@ export default function ProfilePage() {
       {error && <Alert color="orange">{error}</Alert>}
       {loading ? <Center py="xl"><Loader color="brand" /></Center> : (
         <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
-          <Stat icon={Activity} label="Sessions logged" value={summary.workouts} />
+          <Stat icon={Activity} label="Recent sessions" value={summary.workouts} />
           <Stat icon={Clock3} label="Minutes trained" value={summary.minutes} />
           <Stat icon={Award} label="Volume moved" value={summary.volume.toLocaleString()} suffix="lb" />
-          <Stat icon={Target} label="Current goal" value={String(profile?.fitness_goal || "—").replaceAll("_", " ")} compact />
+          <Stat icon={Target} label="Current goal" value={getFitnessGoal(profile?.fitness_goal)?.label || "Not set"} compact />
         </SimpleGrid>
       )}
 
@@ -135,7 +135,7 @@ export default function ProfilePage() {
         <Paper className="surface profile-settings" p="xl">
           <Text className="eyebrow">Current setup</Text>
           <Stack mt="xl" gap="lg">
-            <InfoRow label="Goal" value={String(profile?.fitness_goal || "—").replaceAll("_", " ")} />
+            <InfoRow label="Goal" value={getFitnessGoal(profile?.fitness_goal)?.label || "Not set"} />
             <InfoRow label="Experience" value={profile?.experience_level} />
             <InfoRow label="Session target" value={`${profile?.workout_duration} minutes`} />
             <InfoRow label="Equipment" value={`${profile?.equipment?.length || 0} items`} />

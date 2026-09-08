@@ -7,6 +7,7 @@ import "@mantine/notifications/styles.css";
 import "./index.css";
 import "./theme/style.css";
 import { ThemeProvider } from "./theme/theme.jsx";
+import { PageErrorBoundary } from "./components/PageErrorBoundary.jsx";
 
 const App = lazy(() => import("./App.jsx"));
 const LandingPage = lazy(() => import("./pages/LandingPage.jsx"));
@@ -28,6 +29,7 @@ createRoot(document.getElementById("root")).render(
   <StrictMode>
     <BrowserRouter>
       <ThemeProvider>
+        <PageErrorBoundary>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
@@ -45,6 +47,7 @@ createRoot(document.getElementById("root")).render(
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
+        </PageErrorBoundary>
       </ThemeProvider>
     </BrowserRouter>
   </StrictMode>,

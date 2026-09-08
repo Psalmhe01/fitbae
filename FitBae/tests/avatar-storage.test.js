@@ -1,0 +1,110 @@
+import { after, before, beforeEach, test } from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { PGlite } from "@electric-sql/pglite";
+
+const owner = "11111111-1111-4111-8111-111111111111";
+const partner = "22222222-2222-4222-8222-222222222222";
+const stranger = "33333333-3333-4333-8333-333333333333";
+const picture = `${owner}/avatar-test.jpg`;
+let db;
+
+before(async () => {
+  db = new PGlite();
+  // Emulate Supabase's managed schemas and JWT identity locally. All app tables,
+  // policies, functions and triggers below come from the actual migrations.
+  await db.exec(`
+    create role authenticated;
+    create role anon;
+    create schema auth;
+    create schema storage;
+    create table auth.users (id uuid primary key, raw_user_meta_data jsonb default '{}');
+    create function auth.uid() returns uuid language sql stable as
+      $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
+    create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id), name text);
+    create function storage.foldername(name text) returns text[] language sql immutable as
+      $$ select (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1] $$;
+    alter table storage.objects enable row level security;
+    grant usage on schema public, auth, storage to authenticated, anon;
+    grant select, insert, update, delete on storage.objects to authenticated, anon;
+  `);
+  const core = await readFile(new URL("../supabase/migrations/202609060001_core_schema_and_rls.sql", import.meta.url), "utf8");
+  // gen_random_uuid is native to PostgreSQL; this harness needs no pgcrypto.
+  await db.exec(core.replace("create extension if not exists pgcrypto;", ""));
+  await db.exec(await readFile(new URL("../supabase/migrations/202609080001_profile_avatars.sql", import.meta.url), "utf8"));
+  await db.exec("grant select, insert, update, delete on all tables in schema public to authenticated");
+  for (const id of [owner, partner, stranger]) {
+    await db.query("insert into auth.users (id, raw_user_meta_data) values ($1, $2)", [id, { fitbae_avatar: { type: "upload", path: `${id}/avatar-test.jpg` }, private_test_field: "not shared" }]);
+  }
+});
+
+beforeEach(async () => {
+  await db.exec("reset role; truncate storage.objects, public.partnerships");
+  await asUser(owner);
+  await db.query("insert into storage.objects (bucket_id, name) values ('avatar-photos', $1)", [picture]);
+});
+
+after(async () => { await db?.close(); });
+
+async function asUser(userId, role = "authenticated") {
+  await db.exec("reset role");
+  await db.query("select set_config('request.jwt.claim.sub', $1, false)", [userId]);
+  await db.exec(role === "anon" ? "set role anon" : "set role authenticated");
+}
+
+async function invite() {
+  await asUser(owner);
+  const { rows } = await db.query("insert into public.partnerships (requester_id, recipient_id) values ($1, $2) returning id", [owner, partner]);
+  return rows[0].id;
+}
+
+test("avatar objects are owner-only before consent and cannot be overwritten by another user", async () => {
+  assert.equal((await db.query("select * from storage.objects")).rows.length, 1);
+  await asUser(stranger);
+  assert.equal((await db.query("select * from storage.objects")).rows.length, 0);
+  await assert.rejects(db.query("insert into storage.objects (bucket_id, name) values ('avatar-photos', $1)", [picture]), /row-level security/);
+  assert.equal((await db.query("delete from storage.objects returning id")).rows.length, 0);
+  assert.equal((await db.query("update storage.objects set name = 'changed' returning id")).rows.length, 0);
+  assert.equal((await db.query("select public.get_partner_avatar($1) as avatar", [owner])).rows[0].avatar, null);
+});
+
+test("only the invited partner can accept, then read but not delete their partner's photo", async () => {
+  const id = await invite();
+  await assert.rejects(db.query("update public.partnerships set status = 'accepted' where id = $1", [id]), /Only the invited partner/);
+  await asUser(partner);
+  assert.equal((await db.query("select * from storage.objects")).rows.length, 0);
+  await db.query("update public.partnerships set status = 'accepted' where id = $1", [id]);
+  assert.equal((await db.query("select * from storage.objects")).rows.length, 1);
+  assert.deepEqual((await db.query("select public.get_partner_avatar($1) as avatar", [owner])).rows[0].avatar, { type: "upload", path: picture });
+  assert.equal((await db.query("delete from storage.objects returning id")).rows.length, 0);
+  await db.query("delete from public.partnerships where id = $1", [id]);
+  assert.equal((await db.query("select * from storage.objects")).rows.length, 0);
+  assert.equal((await db.query("select public.get_partner_avatar($1) as avatar", [owner])).rows[0].avatar, null);
+});
+
+test("pre-accepted invitations and participant changes cannot bypass partner consent", async () => {
+  await assert.rejects(db.query("insert into public.partnerships (requester_id, recipient_id, status) values ($1, $2, 'accepted')", [owner, partner]), /must be pending/);
+  const id = await invite();
+  await asUser(partner);
+  await assert.rejects(db.query("update public.partnerships set requester_id = $1, status = 'accepted' where id = $2", [stranger, id]), /Only the invited partner/);
+  await db.query("update public.partnerships set status = 'accepted' where id = $1", [id]);
+  await asUser(owner);
+  await assert.rejects(db.query("update public.partnerships set recipient_id = $1 where id = $2", [stranger, id]), /Only the invited partner/);
+});
+
+test("declined invitations can be re-sent but require consent again", async () => {
+  const id = await invite();
+  await asUser(partner);
+  await db.query("update public.partnerships set status = 'declined' where id = $1", [id]);
+  await db.query("update public.partnerships set status = 'pending', requester_id = $1, recipient_id = $2 where id = $3", [partner, owner, id]);
+  await assert.rejects(db.query("update public.partnerships set status = 'accepted' where id = $1", [id]), /Only the invited partner/);
+  await asUser(owner);
+  await db.query("update public.partnerships set status = 'accepted' where id = $1", [id]);
+});
+
+test("anonymous clients cannot read files or call the partner avatar function", async () => {
+  await asUser("", "anon");
+  assert.equal((await db.query("select * from storage.objects")).rows.length, 0);
+  await assert.rejects(db.query("select public.get_partner_avatar($1)", [owner]), /permission denied/);
+});

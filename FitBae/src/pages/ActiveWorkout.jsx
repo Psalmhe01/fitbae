@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import {
   ActionIcon, Alert, Badge, Box, Button, Divider, Group, Modal,
@@ -115,10 +115,12 @@ export default function ActiveWorkoutPage() {
   const { profile, session } = useOutletContext();
   const location = useLocation();
   const navigate = useNavigate();
-  const incomingWorkout = location.state?.workout;
-  const stored = incomingWorkout ? null : readDraft(session?.user?.id);
-  const [workout, setWorkout] = useState(incomingWorkout || stored?.workout || null);
-  const [planId] = useState(location.state?.planId || stored?.planId || null);
+  // Router state survives reloads. Prefer the saved draft so refresh doesn't
+  // start the original workout over or undo in-session substitutions.
+  const [stored] = useState(() => readDraft(session?.user?.id));
+  const [incomingWorkout] = useState(() => stored ? null : location.state?.workout);
+  const [workout, setWorkout] = useState(stored?.workout || incomingWorkout || null);
+  const [planId] = useState(stored?.planId || location.state?.planId || null);
   const [idempotencyKey] = useState(() => stored?.idempotencyKey || createIdempotencyKey());
   const [logs, setLogs] = useState(() => createLogs(incomingWorkout || stored?.workout, stored?.logs));
   const [startedAt] = useState(() => {
@@ -140,6 +142,10 @@ export default function ActiveWorkoutPage() {
   const [saving, setSaving] = useState(false);
   const [finished, setFinished] = useState(false);
   const restAlerted = useRef(false);
+
+  useEffect(() => {
+    if (location.state?.workout) navigate("/workout", { replace: true, state: null });
+  }, [location.state?.workout, navigate]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -227,6 +233,10 @@ export default function ActiveWorkoutPage() {
   };
 
   const handleSwap = async (replacement) => {
+    const currentKeys = Array.from({ length: Math.max(1, Number(currentExercise.sets) || 1) }, (_, setIndex) => slotKey(currentExercise, activeIndex, setIndex));
+    if (currentKeys.some((key) => logs[key]?.done)) {
+      throw new Error("This exercise already has completed sets. Keep those records and swap this movement from Plan for your next session.");
+    }
     const wrapper = { weekly_schedule: [workout] };
     const next = substitutePlanExercise(wrapper, {
       dayId: workout.day_id || workout.id || workout.day,
@@ -236,7 +246,7 @@ export default function ActiveWorkoutPage() {
     });
     const updated = next.weekly_schedule[0];
     setWorkout(updated);
-    setLogs((current) => createLogs(updated, current));
+    setLogs((current) => createLogs(updated, Object.fromEntries(Object.entries(current).filter(([key]) => !currentKeys.includes(key)))));
     notifications.show({ title: `${replacement.name} is in`, message: "This swap applies to the active session only.", color: "green" });
     return true;
   };

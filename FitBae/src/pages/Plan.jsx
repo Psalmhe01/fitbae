@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
+import { useLocation, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import {
-  Alert, Badge, Box, Button, Center, Divider, Group, Loader, Paper,
+  Alert, Badge, Box, Button, Center, Group, Loader, Modal, Paper,
   SimpleGrid, Stack, Text, ThemeIcon, Title, UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
-  ArrowRight, CalendarDays, Check, CircleAlert, Clock3, Coffee, Dumbbell,
+  ArrowRight, CalendarDays, Check, CircleAlert, Coffee, Dumbbell,
   Flame, HeartHandshake, Info, RefreshCw, RotateCcw, ShieldCheck, TimerReset,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -33,8 +33,8 @@ export default function PlanPage() {
   const { profile, session } = useOutletContext();
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [planRecord, setPlanRecord] = useState(null);
-  const [selectedDayName, setSelectedDayName] = useState(location.state?.day || "");
   const [guideExercise, setGuideExercise] = useState(null);
   const [swapExercise, setSwapExercise] = useState(null);
   const [savingSwap, setSavingSwap] = useState(false);
@@ -42,50 +42,66 @@ export default function PlanPage() {
   const [pendingWorkout, setPendingWorkout] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [planIssues, setPlanIssues] = useState([]);
 
   useEffect(() => {
     if (!session?.user?.id) return;
     let active = true;
-    supabase.from("workout_plans").select("*").eq("user_id", session.user.id)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle()
-      .then(({ data, error: fetchError }) => {
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      setPlanIssues([]);
+      try {
+        const { data, error: fetchError } = await supabase.from("workout_plans").select("*").eq("user_id", session.user.id)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (fetchError) throw new Error("Your plan couldn't be loaded. Check your connection and try again.");
         if (!active) return;
-        if (fetchError) setError("Your plan couldn't be loaded.");
         if (data?.plan_json) {
-          const normalized = normalizeAndValidateWorkoutPlan(data.plan_json, {
+          const rawPlan = typeof data.plan_json === "string" ? JSON.parse(data.plan_json) : data.plan_json;
+          if (!rawPlan || (!Array.isArray(rawPlan.weekly_schedule) && !Array.isArray(rawPlan.days))) {
+            throw new Error("This saved plan is incomplete. Try loading it again or rebuild your week from Today.");
+          }
+          const normalized = normalizeAndValidateWorkoutPlan(rawPlan, {
             selectedEquipment: profile?.equipment,
             expectedFrequency: profile?.gym_frequency,
           });
           setPlanRecord({ ...data, plan_json: normalized.plan });
-          const requested = location.state?.day;
-          const firstChoice = normalized.plan.weekly_schedule.find((day) => day.day === requested)
-            || normalized.plan.weekly_schedule.find((day) => !day.rest)
-            || normalized.plan.weekly_schedule[0];
-          setSelectedDayName(firstChoice?.day || "");
-        }
-        setLoading(false);
-      });
+          setPlanIssues(normalized.errors);
+        } else setPlanRecord(null);
+      } catch (loadError) {
+        if (active) setError(loadError instanceof SyntaxError ? "This saved plan couldn't be read. Rebuild it from Today." : loadError.message);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
     return () => { active = false; };
-  }, [location.state?.day, profile?.equipment, profile?.gym_frequency, session?.user?.id]);
+  }, [loadAttempt, profile?.equipment, profile?.gym_frequency, session?.user?.id]);
 
   const schedule = planRecord?.plan_json?.weekly_schedule || [];
+  const selectedDayName = searchParams.get("day") || location.state?.day
+    || new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(new Date());
   const selectedDay = schedule.find((day) => day.day === selectedDayName) || schedule[0];
 
   const persistPlan = async (nextPlan, successMessage) => {
-    if (!planRecord?.id) return false;
+    if (!planRecord?.id || savingSwap) return false;
     setSavingSwap(true);
-    const { error: updateError } = await supabase.from("workout_plans")
-      .update({ plan_json: nextPlan })
-      .eq("id", planRecord.id)
-      .eq("user_id", session.user.id);
-    setSavingSwap(false);
-    if (updateError) {
+    try {
+      const { error: updateError } = await supabase.from("workout_plans")
+        .update({ plan_json: nextPlan })
+        .eq("id", planRecord.id)
+        .eq("user_id", session.user.id).select("id").single();
+      if (updateError) throw updateError;
+      setPlanRecord((current) => ({ ...current, plan_json: nextPlan }));
+      if (successMessage) notifications.show({ title: successMessage, message: "The rest of your week stayed exactly the same.", color: "green" });
+      return true;
+    } catch (updateError) {
       notifications.show({ title: "Change not saved", message: updateError.message, color: "red" });
       return false;
+    } finally {
+      setSavingSwap(false);
     }
-    setPlanRecord((current) => ({ ...current, plan_json: nextPlan }));
-    if (successMessage) notifications.show({ title: successMessage, message: "The rest of your week stayed exactly the same.", color: "green" });
-    return true;
   };
 
   const handleSwap = async (replacement, metadata) => {
@@ -99,7 +115,7 @@ export default function PlanPage() {
     });
     const saved = await persistPlan(nextPlan, `${replacement.name} is in`);
     if (saved) {
-      setLastSwap({ previousPlan, from: swapExercise.name, to: replacement.name, reason: metadata.reason });
+      setLastSwap({ previousPlan, from: swapExercise.name, to: replacement.name, reason: metadata?.reason });
       setSwapExercise(null);
     }
     return saved;
@@ -133,7 +149,7 @@ export default function PlanPage() {
   const activeCount = useMemo(() => schedule.filter((day) => !day.rest).length, [schedule]);
 
   if (loading) return <Center mih="55vh"><Loader color="brand" /></Center>;
-  if (error) return <Alert color="red" icon={<CircleAlert size={18} />}>{error}</Alert>;
+  if (error) return <Alert color="red" title="Your plan couldn't open" icon={<CircleAlert size={18} />}><Text size="sm">{error}</Text><Group mt="md"><Button variant="light" color="red" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</Button><Button variant="subtle" color="gray" onClick={() => navigate("/dashboard")}>Back to Today</Button></Group></Alert>;
   if (!planRecord || !schedule.length) {
     return <Paper className="surface-raised" p={{ base: "xl", md: 48 }}><ThemeIcon color="brand" variant="light" size={54}><CalendarDays size={25} /></ThemeIcon><Title order={2} mt="xl">No active plan yet</Title><Text c="dimmed" mt="sm">Return to Today to build a fresh plan from your saved preferences.</Text><Button mt="xl" onClick={() => navigate("/dashboard")}>Go to Today</Button></Paper>;
   }
@@ -155,13 +171,15 @@ export default function PlanPage() {
         <Alert color="orange" variant="light" icon={<ShieldCheck size={18} />} title="Train with good judgment">{planRecord.plan_json.safety_note}</Alert>
       )}
 
+      {planIssues.length > 0 && <Alert color="orange" title="Review this plan before training">Your saved week has {planIssues.length === 1 ? "an item" : "items"} to review: {planIssues.slice(0, 3).map((issue) => issue.message).join(" ")}</Alert>}
+
       <SimpleGrid cols={7} spacing={{ base: 5, sm: "sm" }}>
         {schedule.map((day) => (
           <UnstyledButton
             key={day.day_id || day.day}
             className="day-pill"
             data-active={day.day === selectedDay?.day}
-            onClick={() => setSelectedDayName(day.day)}
+            onClick={() => setSearchParams((current) => { current.set("day", day.day); return current; }, { replace: true })}
             py={{ base: 10, sm: 14 }} px={{ base: 3, sm: 8 }}
             style={{ borderRadius: 10, textAlign: "center" }}
             aria-pressed={day.day === selectedDay?.day}
@@ -174,7 +192,7 @@ export default function PlanPage() {
       </SimpleGrid>
 
       {selectedDay && (
-        <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="lg">
+        <Box className="plan-layout">
           <Box className="plan-main">
             <Paper className="surface-raised" p={{ base: "lg", md: 32 }}>
               <Group justify="space-between" align="flex-start">
@@ -208,7 +226,7 @@ export default function PlanPage() {
               </>
             )}
           </Stack>
-        </SimpleGrid>
+        </Box>
       )}
 
       {planRecord.plan_json.progression && (

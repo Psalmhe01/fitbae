@@ -5,6 +5,8 @@
     "dev": "npm --prefix FitBae run dev",
     "build": "npm --prefix FitBae run build",
     "test": "npm --prefix FitBae run test",
+    "lint": "npm --prefix FitBae run lint",
+    "test:e2e": "npm --prefix FitBae run test:e2e",
     "check": "npm --prefix FitBae run check"
   },
   "dependencies": {

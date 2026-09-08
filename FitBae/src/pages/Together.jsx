@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useOutletContext } from "react-router-dom";
+import { useOutletContext } from "react-router-dom";
 import {
-  ActionIcon, Alert, Avatar, Badge, Box, Button, Center, Divider, Group,
+  ActionIcon, Alert, Box, Button, Center, Divider, Group,
   Loader, Modal, Paper, Progress, SimpleGrid, Stack, Text, Textarea,
   TextInput, ThemeIcon, Title,
 } from "@mantine/core";
@@ -11,6 +11,7 @@ import {
   Sparkles, Unlink, UserPlus, X,
 } from "lucide-react";
 import { isMissingDatabaseFunction, supabase } from "@/lib/supabase";
+import { ProfileAvatar } from "@/components/ProfileAvatar";
 
 const weekStart = () => {
   const date = new Date();
@@ -29,6 +30,7 @@ export default function TogetherPage() {
   const userId = session?.user?.id;
   const [relationship, setRelationship] = useState(null);
   const [partner, setPartner] = useState(null);
+  const [partnerAvatar, setPartnerAvatar] = useState(null);
   const [notes, setNotes] = useState([]);
   const [ownSessions, setOwnSessions] = useState([]);
   const [partnerSessions, setPartnerSessions] = useState(null);
@@ -108,6 +110,15 @@ export default function TogetherPage() {
 
   useEffect(() => { fetchRelationship(); }, [fetchRelationship]);
   useEffect(() => { fetchPartnerDetails(); }, [fetchPartnerDetails]);
+
+  useEffect(() => {
+    if (!partnerId || relationship?.status !== "accepted") return undefined;
+    let active = true;
+    supabase.rpc("get_partner_avatar", { p_partner_id: partnerId }).then(({ data, error: avatarError }) => {
+      if (active) setPartnerAvatar({ partnerId, choice: avatarError ? null : data });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [partnerId, relationship?.status]);
 
   useEffect(() => {
     if (!userId || !partnerId || relationship?.status !== "accepted") return undefined;
@@ -221,7 +232,7 @@ export default function TogetherPage() {
             <Group justify="space-between" align="center" wrap="wrap" style={{ position: "relative", zIndex: 1 }}>
               <Group gap="lg">
                 <Box style={{ position: "relative" }}>
-                  <Avatar size={76} radius={24} color="orange">{partner?.name?.charAt(0) || "♥"}</Avatar>
+                  <ProfileAvatar user={{ id: partnerId }} name={partner?.name || "Partner"} choice={partnerAvatar?.partnerId === partnerId ? partnerAvatar.choice : null} size={76} radius={24} />
                   <ThemeIcon color="brand" c="dark.9" size={28} radius="xl" style={{ position: "absolute", right: -8, bottom: -6 }}><Link2 size={14} /></ThemeIcon>
                 </Box>
                 <Box><Text className="eyebrow" c="gray.5">Connected</Text><Title order={2} fz={30} mt={3}>{profile.name?.split(" ")[0]} + {partner?.name?.split(" ")[0] || "partner"}</Title><Text size="sm" c="gray.4" mt={4}>Two plans. One team.</Text></Box>

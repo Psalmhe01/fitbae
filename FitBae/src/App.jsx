@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  ActionIcon, Alert, Avatar, Badge, Box, Button, Center, Container, Divider,
+  ActionIcon, Alert, Box, Button, Center, Container, Divider,
   Group, Indicator, Loader, Menu, Popover, ScrollArea, Stack, Text,
   UnstyledButton, rem,
 } from "@mantine/core";
@@ -12,6 +12,8 @@ import {
 import { supabase } from "@/lib/supabase";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandMark } from "@/components/BrandMark";
+import { ProfileAvatar } from "@/components/ProfileAvatar";
+import { PageErrorBoundary } from "@/components/PageErrorBoundary";
 
 const nav = [
   { to: "/dashboard", label: "Today", icon: LayoutDashboard },
@@ -226,7 +228,7 @@ export default function App() {
           py={{ base: "lg", md: 36 }}
           pb={{ base: isWorkout ? 120 : 104, md: isWorkout ? 120 : 48 }}
         >
-          <Outlet context={{ profile, session, setProfile }} />
+          <PageErrorBoundary><Outlet context={{ profile, session, setProfile, setSession }} /></PageErrorBoundary>
         </Container>
       </Box>
 
@@ -275,9 +277,7 @@ function UserMenu({ profile, session, navigate, signOut, inverted = false }) {
       <Menu.Target>
         <UnstyledButton aria-label="Open account menu" w={inverted ? "100%" : undefined}>
           <Group gap="sm" wrap="nowrap">
-            <Avatar color="brand" c="dark.9" radius="xl" size={38} src={session?.user?.user_metadata?.avatar_url}>
-              {profile?.name?.charAt(0) || session?.user?.email?.charAt(0)}
-            </Avatar>
+            <ProfileAvatar user={session?.user} name={profile?.name} size={38} />
             {inverted && <Box style={{ minWidth: 0 }}><Text c="white" size="sm" fw={700} truncate>{profile?.name}</Text><Text c="gray.5" size="xs">Account</Text></Box>}
             <ChevronDown size={15} color={inverted ? "#adb5bd" : "currentColor"} />
           </Group>

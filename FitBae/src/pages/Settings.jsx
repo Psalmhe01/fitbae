@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import {
-  Alert, Badge, Box, Button, Chip, Divider, Group, Modal, NumberInput,
+  Alert, Box, Button, Chip, Divider, Group, Modal, NumberInput,
   Paper, SegmentedControl, SimpleGrid, Stack, Text, TextInput, ThemeIcon,
   Title,
 } from "@mantine/core";
@@ -16,6 +16,7 @@ import { generateWorkoutPlan } from "@/lib/gemini";
 import { FITNESS_GOAL_OPTIONS, normalizeFitnessGoal } from "@/lib/fitnessConfig";
 import { equipmentCategories } from "@/lib/equipmentLibrary";
 import { equipmentLibrary } from "@/lib/equipmentLibrary";
+import { AvatarEditor } from "@/components/AvatarEditor";
 
 const editableFields = [
   "name", "age", "weight", "height_cm", "sex", "fitness_goal",
@@ -26,22 +27,23 @@ function cleanProfile(profile) {
   return editableFields.reduce((result, key) => ({ ...result, [key]: profile[key] }), {});
 }
 
+function profileForm(profile) {
+  return {
+    ...cleanProfile(profile),
+    fitness_goal: normalizeFitnessGoal(profile.fitness_goal) || "maintain",
+    equipment: Array.isArray(profile.equipment) ? profile.equipment : [],
+  };
+}
+
 export default function SettingsPage() {
-  const { profile: shellProfile, session, setProfile: setShellProfile } = useOutletContext();
+  const { profile: shellProfile, session, setProfile: setShellProfile, setSession } = useOutletContext();
   const navigate = useNavigate();
-  const [form, setForm] = useState(() => ({
-    ...cleanProfile(shellProfile),
-    fitness_goal: normalizeFitnessGoal(shellProfile.fitness_goal) || "maintain",
-    equipment: Array.isArray(shellProfile.equipment) ? shellProfile.equipment : [],
-  }));
+  const [form, setForm] = useState(() => profileForm(shellProfile));
   const [saving, setSaving] = useState(false);
   const [rebuildOpen, setRebuildOpen] = useState(false);
   const [permission, setPermission] = useState(() => typeof Notification === "undefined" ? "unsupported" : Notification.permission);
 
-  const baseline = useMemo(() => JSON.stringify({
-    ...cleanProfile(shellProfile),
-    fitness_goal: normalizeFitnessGoal(shellProfile.fitness_goal) || "maintain",
-  }), [shellProfile]);
+  const baseline = useMemo(() => JSON.stringify(profileForm(shellProfile)), [shellProfile]);
   const dirty = JSON.stringify(form) !== baseline;
 
   useEffect(() => {
@@ -61,14 +63,15 @@ export default function SettingsPage() {
 
   const validate = () => {
     if (!form.name?.trim()) return "Name is required.";
-    if (Number(form.age) < 18 || Number(form.age) > 100) return "Age must be between 18 and 100.";
-    if (Number(form.weight) < 65 || Number(form.weight) > 700) return "Enter a realistic weight in pounds.";
-    if (Number(form.height_cm) < 120 || Number(form.height_cm) > 230) return "Height must be between 120 and 230 cm.";
+    if (!Number.isInteger(Number(form.age)) || Number(form.age) < 18 || Number(form.age) > 100) return "Age must be a whole number between 18 and 100.";
+    if (!Number.isFinite(Number(form.weight)) || Number(form.weight) < 65 || Number(form.weight) > 700) return "Enter a realistic weight in pounds.";
+    if (!Number.isFinite(Number(form.height_cm)) || Number(form.height_cm) < 120 || Number(form.height_cm) > 230) return "Height must be between 120 and 230 cm.";
     if (!form.equipment.length) return "Select at least one available equipment item.";
     return "";
   };
 
   const saveOnly = async () => {
+    if (saving) return false;
     const validation = validate();
     if (validation) {
       notifications.show({ title: "Check your preferences", message: validation, color: "red" });
@@ -76,15 +79,20 @@ export default function SettingsPage() {
     }
     setSaving(true);
     const payload = { ...cleanProfile(form), name: form.name.trim() };
-    const { error } = await supabase.from("profiles").update(payload).eq("user_id", session.user.id);
-    setSaving(false);
-    if (error) {
-      notifications.show({ title: "Changes not saved", message: error.message, color: "red" });
+    try {
+      const { error } = await supabase.from("profiles").update(payload).eq("user_id", session.user.id).select("user_id").single();
+      if (error) throw error;
+      setShellProfile?.((current) => ({ ...current, ...payload }));
+      // Keep the form consistent with saved normalization (e.g. a trimmed name).
+      setForm(profileForm(payload));
+      notifications.show({ title: "Preferences saved", message: "Your current plan was left unchanged.", color: "green" });
+      return true;
+    } catch (error) {
+      notifications.show({ title: "Changes not saved", message: error.message || "Please try again.", color: "red" });
       return false;
+    } finally {
+      setSaving(false);
     }
-    setShellProfile?.((current) => ({ ...current, ...payload }));
-    notifications.show({ title: "Preferences saved", message: "Your current plan was left unchanged.", color: "green" });
-    return true;
   };
 
   const saveAndRebuild = async () => {
@@ -106,7 +114,7 @@ export default function SettingsPage() {
       }).select("id").single();
       if (planError) throw planError;
       newPlanId = insertedPlan.id;
-      const { error: profileError } = await supabase.from("profiles").update(cleanProfile(payload)).eq("user_id", session.user.id);
+      const { error: profileError } = await supabase.from("profiles").update(cleanProfile(payload)).eq("user_id", session.user.id).select("user_id").single();
       if (profileError) throw profileError;
       setShellProfile?.((current) => ({ ...current, ...cleanProfile(payload) }));
       setRebuildOpen(false);
@@ -131,6 +139,8 @@ export default function SettingsPage() {
       <Box><Button component={Link} to="/profile" variant="subtle" color="gray" px={0} leftSection={<ArrowLeft size={16} />}>Back to profile</Button><Text className="eyebrow" mt="xl">Make FitBae fit</Text><Title order={1} fz={{ base: 38, md: 50 }} lts={-2} mt={4}>Preferences</Title><Text c="dimmed" mt="xs">Change your profile alone, or use the same changes to rebuild your plan.</Text></Box>
 
       {dirty && <Alert color="orange" icon={<CircleAlert size={17} />} title="Unsaved changes">Choose “Save profile” to leave this week's plan alone, or “Save & rebuild” to make a new one.</Alert>}
+
+      <AvatarEditor user={session.user} name={shellProfile.name} onUserChange={(user) => setSession((current) => ({ ...current, user }))} />
 
       <SettingsSection title="Personal details" description="Used for your profile and sensible input checks. Exact measurements are not sent to the plan generator.">
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
@@ -163,7 +173,7 @@ export default function SettingsPage() {
 
       <Alert icon={<ShieldCheck size={18} />} color="brand" title="Your history stays separate">Rebuilding creates a new plan version. Completed sessions and the weights/reps you logged are never overwritten.</Alert>
 
-      <Group justify="flex-end" style={{ position: "sticky", bottom: 16, zIndex: 80 }}>
+      <Group justify="flex-end" className="settings-save-bar">
         <Paper className="surface-raised" p="sm"><Group><Button variant="light" color="gray" onClick={saveOnly} loading={saving} disabled={!dirty} leftSection={<Save size={16} />}>Save profile</Button><Button onClick={() => setRebuildOpen(true)} disabled={!dirty} leftSection={<RefreshCw size={16} />}>Save & rebuild</Button></Group></Paper>
       </Group>
 
