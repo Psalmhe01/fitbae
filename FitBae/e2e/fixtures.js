@@ -39,11 +39,13 @@ export const test = base.extend({
       plan: { id: PLAN_ID, user_id: USER_ID, created_at: new Date().toISOString(), plan_json: structuredClone(plan) },
       planError: false, uploadError: false, metadataError: false,
       uploads: [], removed: [], authUpdates: [], workouts: [], connected: false,
+      history: [], exerciseLogs: [], messages: [], messageError: false,
+      authError: false, authRequests: [], signupConfirmation: true,
     };
     const session = { access_token: "e2e-access-token", refresh_token: "e2e-refresh-token", token_type: "bearer", expires_in: 86400, expires_at: Math.floor(Date.now() / 1000) + 86400, user: state.user };
     await page.addInitScript((initialSession) => {
       const key = "sb-fitbae-e2e-auth-token";
-      if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(initialSession));
+      if (!localStorage.getItem(key) && !localStorage.getItem("fitbae-test-signed-out")) localStorage.setItem(key, JSON.stringify(initialSession));
       localStorage.setItem("fitbae-color-scheme", "light");
     }, session);
     const errors = [];
@@ -54,6 +56,17 @@ export const test = base.extend({
       const url = new URL(request.url());
       const json = (body, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
       const method = request.method();
+      if (url.pathname.endsWith("/auth/v1/token")) {
+        state.authRequests.push({ type: "signin", ...request.postDataJSON() });
+        if (state.authError) return json({ code: "invalid_credentials", msg: "Invalid login credentials" }, 400);
+        return json({ ...session, user: state.user });
+      }
+      if (url.pathname.endsWith("/auth/v1/signup")) {
+        state.authRequests.push({ type: "signup", ...request.postDataJSON() });
+        return json(state.signupConfirmation ? state.user : { ...session, user: state.user });
+      }
+      if (url.pathname.endsWith("/auth/v1/recover")) { state.authRequests.push({ type: "recover", ...request.postDataJSON() }); return json({}); }
+      if (url.pathname.endsWith("/auth/v1/logout")) return json({});
       if (url.pathname.endsWith("/auth/v1/user")) {
         if (method === "PUT") {
           if (state.metadataError) return json({ message: "Could not update your picture" }, 500);
@@ -86,8 +99,31 @@ export const test = base.extend({
         if (method === "PATCH") { state.plan = { ...state.plan, ...request.postDataJSON() }; return json({ id: PLAN_ID }); }
         return json(state.plan);
       }
-      if (url.pathname.endsWith("/partnerships")) return json(state.connected ? [{ id: "connection", requester_id: USER_ID, recipient_id: PARTNER_ID, status: "accepted" }] : []);
-      if (/\/(workout_sessions|exercise_logs|partner_notes|partner_reactions)$/.test(url.pathname)) return json([]);
+      if (url.pathname.endsWith("/partnerships")) {
+        const relationship = { id: "connection", requester_id: USER_ID, recipient_id: PARTNER_ID, status: "accepted" };
+        return json(request.headers().accept?.includes("vnd.pgrst.object") ? state.connected ? relationship : null : state.connected ? [relationship] : []);
+      }
+      const pageOf = (rows) => {
+        const offset = Number(url.searchParams.get("offset")) || 0;
+        const limit = Number(url.searchParams.get("limit")) || rows.length;
+        return rows.slice(offset, offset + limit);
+      };
+      if (url.pathname.endsWith("/workout_sessions")) {
+        const id = url.searchParams.get("id")?.replace("eq.", "");
+        return json(id ? state.history.find((item) => item.id === id) || null : pageOf(state.history));
+      }
+      if (url.pathname.endsWith("/exercise_logs")) return json(state.exerciseLogs);
+      if (url.pathname.endsWith("/partner_notes")) {
+        if (method === "POST") {
+          if (state.messageError) return json({ code: "08000", message: "Offline" }, 503);
+          const message = { ...request.postDataJSON(), seen: false };
+          state.messages.push(message); return json(message);
+        }
+        if (method === "PATCH") { state.messages = state.messages.map((item) => item.recipient_id === USER_ID ? { ...item, seen: true } : item); return json([]); }
+        const incomingOnly = url.searchParams.has("seen");
+        return json(pageOf(state.messages.filter((item) => !incomingOnly || (item.recipient_id === USER_ID && !item.seen)).sort((a, b) => b.created_at.localeCompare(a.created_at))));
+      }
+      if (url.pathname.endsWith("/partner_reactions")) return json([]);
       return json({ message: `Unexpected test request: ${url.pathname}` }, 404);
     });
     await provideApp(state);
@@ -96,6 +132,10 @@ export const test = base.extend({
 });
 
 export { expect };
+
+export async function signedOut(page) {
+  await page.addInitScript(() => { localStorage.setItem("fitbae-test-signed-out", "yes"); localStorage.removeItem("sb-fitbae-e2e-auth-token"); });
+}
 
 export async function seedAvatar(page, app, choice) {
   app.user.user_metadata.fitbae_avatar = choice;

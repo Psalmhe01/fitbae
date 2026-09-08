@@ -8,10 +8,10 @@ import { Activity, ArrowRight, Award, CalendarDays, Clock3, Dumbbell, Settings2,
 import { supabase } from "@/lib/supabase";
 import { getFitnessGoal } from "@/lib/fitnessConfig";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
+import { formatTimestamp, parseTimestamp, userTimeZone } from "@/lib/dates";
+import { repVolume } from "@/lib/training";
 
-const dateLabel = (value) => new Intl.DateTimeFormat(undefined, {
-  month: "short", day: "numeric", year: "numeric",
-}).format(new Date(value));
+const dateLabel = (value, zone) => formatTimestamp(value, { year: "numeric", hour: undefined, minute: undefined }, zone);
 
 const durationLabel = (seconds = 0) => {
   const minutes = Math.round(Number(seconds) / 60);
@@ -35,7 +35,7 @@ export default function ProfilePage() {
     if (!session?.user?.id) return;
     let active = true;
     supabase.from("workout_sessions")
-      .select("id,workout_type,focus,duration_seconds,finished_at,status,exercise_logs(weight_lbs,actual_reps,skipped)")
+      .select("id,workout_type,focus,duration_seconds,finished_at,status,exercise_logs(weight_lbs,actual_reps,actual_unit,skipped)")
       .eq("user_id", session.user.id)
       .eq("status", "completed")
       .order("finished_at", { ascending: false })
@@ -52,8 +52,7 @@ export default function ProfilePage() {
   const summary = useMemo(() => {
     const totalSeconds = sessions.reduce((sum, item) => sum + (Number(item.duration_seconds) || 0), 0);
     const volume = sessions.reduce((sum, item) => sum + (item.exercise_logs || []).reduce((setSum, log) => {
-      if (log.skipped) return setSum;
-      return setSum + (Number(log.weight_lbs) || 0) * (Number(log.actual_reps) || 0);
+      return setSum + repVolume(log);
     }, 0), 0);
     return { workouts: sessions.length, minutes: Math.round(totalSeconds / 60), volume };
   }, [sessions]);
@@ -64,7 +63,7 @@ export default function ProfilePage() {
       const date = new Date(startOfWeek());
       date.setDate(date.getDate() + index);
       const key = formatter.format(date);
-      const daySessions = sessions.filter((item) => item.finished_at && formatter.format(new Date(item.finished_at)) === key);
+      const daySessions = sessions.filter((item) => parseTimestamp(item.finished_at) && formatter.format(parseTimestamp(item.finished_at)) === key);
       return {
         label: new Intl.DateTimeFormat(undefined, { weekday: "narrow" }).format(date),
         minutes: Math.round(daySessions.reduce((sum, item) => sum + (Number(item.duration_seconds) || 0), 0) / 60),
@@ -98,6 +97,7 @@ export default function ProfilePage() {
       </Paper>
 
       {error && <Alert color="orange">{error}</Alert>}
+      <Text size="xs" c="dimmed">Training totals below cover your latest {sessions.length} sessions. Open Progress to load and explore older workouts.</Text>
       {loading ? <Center py="xl"><Loader color="brand" /></Center> : (
         <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
           <Stat icon={Activity} label="Recent sessions" value={summary.workouts} />
@@ -148,7 +148,7 @@ export default function ProfilePage() {
         <Group justify="space-between" mb="md"><Box><Text className="eyebrow">Recent work</Text><Title order={2} fz={28} mt={4}>Workout history</Title></Box><Button component={Link} to="/history" variant="subtle" rightSection={<ArrowRight size={16} />}>View all</Button></Group>
         <Stack gap="sm">
           {sessions.slice(0, 3).map((item) => (
-            <UnstyledSession key={item.id} session={item} />
+            <UnstyledSession key={item.id} session={item} zone={userTimeZone(session.user)} />
           ))}
           {!sessions.length && <Paper className="surface" p="xl"><Text c="dimmed">Complete your first workout and it will show up here.</Text></Paper>}
         </Stack>
@@ -165,12 +165,12 @@ function InfoRow({ label, value }) {
   return <Group justify="space-between"><Text size="sm" c="dimmed">{label}</Text><Text size="sm" fw={750} tt="capitalize">{value}</Text></Group>;
 }
 
-function UnstyledSession({ session }) {
+function UnstyledSession({ session, zone }) {
   return (
     <Paper component={Link} to={`/history/${session.id}`} className="surface" p="lg" style={{ display: "block", color: "inherit", textDecoration: "none" }}>
       <Group justify="space-between" wrap="nowrap">
-        <Group wrap="nowrap"><ThemeIcon variant="light" color="brand"><Dumbbell size={16} /></ThemeIcon><Box style={{ minWidth: 0 }}><Text fw={750} truncate>{session.workout_type}</Text><Text size="xs" c="dimmed" truncate>{session.focus || dateLabel(session.finished_at)}</Text></Box></Group>
-        <Box ta="right"><Text size="sm" fw={750}>{durationLabel(session.duration_seconds)}</Text><Text size="xs" c="dimmed">{dateLabel(session.finished_at)}</Text></Box>
+        <Group wrap="nowrap"><ThemeIcon variant="light" color="brand"><Dumbbell size={16} /></ThemeIcon><Box style={{ minWidth: 0 }}><Text fw={750} truncate>{session.workout_type}</Text><Text size="xs" c="dimmed" truncate>{session.focus || dateLabel(session.finished_at, zone)}</Text></Box></Group>
+        <Box ta="right"><Text size="sm" fw={750}>{durationLabel(session.duration_seconds)}</Text><Text size="xs" c="dimmed">{dateLabel(session.finished_at, zone)}</Text></Box>
       </Group>
     </Paper>
   );

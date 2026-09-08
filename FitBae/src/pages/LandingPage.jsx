@@ -4,7 +4,6 @@ import {
   Anchor, Badge, Box, Button, Container, Group, Paper, SimpleGrid,
   Stack, Text, ThemeIcon, Title, rem,
 } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import { ArrowRight, CalendarCheck, HeartHandshake, Repeat2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -31,7 +30,6 @@ const features = [
 export default function LandingPage() {
   const navigate = useNavigate();
   const [checkingSession, setCheckingSession] = useState(true);
-  const [signingIn, setSigningIn] = useState(false);
   const [session, setSession] = useState(null);
 
   useEffect(() => {
@@ -41,18 +39,7 @@ export default function LandingPage() {
     });
   }, []);
 
-  const handleGoogleLogin = async () => {
-    if (session) return navigate("/dashboard");
-    setSigningIn(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/dashboard` },
-    });
-    if (error) {
-      setSigningIn(false);
-      notifications.show({ title: "We couldn't sign you in", message: error.message, color: "red" });
-    }
-  };
+  const openAccount = (mode = "signin") => navigate(session ? "/dashboard" : `/auth?mode=${mode}`);
 
   return (
     <Box className="bg-hero">
@@ -65,8 +52,8 @@ export default function LandingPage() {
               <Button
                 variant="subtle"
                 color="gray"
-                onClick={handleGoogleLogin}
-                loading={checkingSession || signingIn}
+                onClick={() => openAccount()}
+                loading={checkingSession}
                 visibleFrom="sm"
               >
                 {session ? "Open app" : "Sign in"}
@@ -94,14 +81,14 @@ export default function LandingPage() {
                 color="brand"
                 c="dark.9"
                 rightSection={<ArrowRight size={20} />}
-                onClick={handleGoogleLogin}
-                loading={checkingSession || signingIn}
+                onClick={() => openAccount("signup")}
+                loading={checkingSession}
               >
                 {session ? "Continue training" : "Build our plan"}
               </Button>
               <Anchor href="#how-it-works" c="dimmed" fw={700} px="sm">See how it works</Anchor>
             </Group>
-            <Text size="xs" c="dimmed" mt="md">Sign in securely with Google. No credit card required.</Text>
+            <Text size="xs" c="dimmed" mt="md">Use your email or Google. No credit card required.</Text>
           </Stack>
 
           <Paper className="hero-photo" radius={{ base: 0, md: "xl" }}>

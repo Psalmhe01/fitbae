@@ -17,6 +17,8 @@ import { getEquipmentById } from "@/lib/equipmentLibrary";
 import { substitutePlanExercise } from "@/lib/workoutPlan";
 import { ExerciseGuideModal } from "@/components/ExerciseGuideModal";
 import { ExerciseSwapModal } from "@/components/ExerciseSwapModal";
+import { elapsedTrainingSeconds, restoreSessionClock } from "@/lib/training";
+import { formatTimestamp, userTimeZone } from "@/lib/dates";
 
 const DRAFT_KEY = "fitbae-active-workout";
 
@@ -123,13 +125,8 @@ export default function ActiveWorkoutPage() {
   const [planId] = useState(stored?.planId || location.state?.planId || null);
   const [idempotencyKey] = useState(() => stored?.idempotencyKey || createIdempotencyKey());
   const [logs, setLogs] = useState(() => createLogs(incomingWorkout || stored?.workout, stored?.logs));
-  const [startedAt] = useState(() => {
-    if (incomingWorkout) return Date.now();
-    if (stored?.paused && Number.isFinite(Number(stored.elapsedSeconds))) {
-      return Date.now() - Number(stored.elapsedSeconds) * 1000;
-    }
-    return stored?.startedAt || Date.now();
-  });
+  const [clock] = useState(() => restoreSessionClock(stored));
+  const startedAt = clock.startedAt;
   const [now, setNow] = useState(Date.now());
   const [activeIndex, setActiveIndex] = useState(stored?.activeIndex || 0);
   const [restEndsAt, setRestEndsAt] = useState(stored?.restEndsAt || null);
@@ -141,7 +138,30 @@ export default function ActiveWorkoutPage() {
   const [notes, setNotes] = useState(stored?.notes || "");
   const [saving, setSaving] = useState(false);
   const [finished, setFinished] = useState(false);
+  const [finishedElapsed, setFinishedElapsed] = useState(null);
+  const [previousSets, setPreviousSets] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
+  const [draftError, setDraftError] = useState(false);
   const restAlerted = useRef(false);
+  const completedSave = useRef(false);
+  const currentName = workout?.exercises?.[activeIndex]?.name;
+
+  useEffect(() => {
+    if (!currentName || !session?.user?.id) return;
+    let active = true;
+    setHistoryLoading(true); setHistoryError(false); setPreviousSets([]);
+    supabase.from("exercise_logs").select("session_id,set_number,weight_lbs,actual_reps,actual_value,actual_unit,completed_at,skipped")
+      .eq("user_id", session.user.id).eq("exercise_name", currentName).eq("skipped", false)
+      .order("completed_at", { ascending: false }).limit(40)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) setHistoryError(true);
+        else setPreviousSets((data || []).filter((log) => log.session_id === data?.[0]?.session_id).sort((a, b) => a.set_number - b.set_number));
+      }).catch(() => { if (active) setHistoryError(true); })
+      .finally(() => { if (active) setHistoryLoading(false); });
+    return () => { active = false; };
+  }, [currentName, session?.user?.id]);
 
   useEffect(() => {
     if (location.state?.workout) navigate("/workout", { replace: true, state: null });
@@ -157,9 +177,9 @@ export default function ActiveWorkoutPage() {
       navigate("/dashboard", { replace: true });
       return;
     }
-    if (finished) return;
+    if (finished || completedSave.current) return;
     const completedSets = Object.values(logs).filter((item) => item.done).length;
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify({
       userId: session?.user?.id,
       planId,
       idempotencyKey,
@@ -170,11 +190,11 @@ export default function ActiveWorkoutPage() {
       restEndsAt,
       notes,
       completedSets,
-      elapsedSeconds: Math.max(0, Math.floor((Date.now() - startedAt) / 1000)),
+      elapsedSeconds: elapsedTrainingSeconds(clock),
       paused: false,
       updatedAt: Date.now(),
-    }));
-  }, [activeIndex, finished, idempotencyKey, logs, notes, planId, restEndsAt, session?.user?.id, startedAt, workout, navigate]);
+    })); setDraftError(false); } catch { setDraftError(true); }
+  }, [activeIndex, clock, finished, idempotencyKey, logs, notes, planId, restEndsAt, session?.user?.id, startedAt, workout, navigate]);
 
   const restRemaining = restEndsAt ? Math.max(0, Math.ceil((restEndsAt - now) / 1000)) : null;
   useEffect(() => {
@@ -199,7 +219,7 @@ export default function ActiveWorkoutPage() {
   const skippedSets = allLogEntries.filter((item) => item.skipped).length;
   const handledSets = completedSets + skippedSets;
   const progress = totalSets ? Math.min(100, (handledSets / totalSets) * 100) : 0;
-  const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const elapsedSeconds = finishedElapsed ?? elapsedTrainingSeconds(clock, now);
   const volume = calculateRepVolume(exercises, logs);
 
   const updateSet = (exercise, exerciseIndex, setIndex, changes) => {
@@ -252,6 +272,7 @@ export default function ActiveWorkoutPage() {
   };
 
   const discardWorkout = () => {
+    completedSave.current = true;
     localStorage.removeItem(DRAFT_KEY);
     setFinished(true);
     navigate("/dashboard", { replace: true });
@@ -259,7 +280,7 @@ export default function ActiveWorkoutPage() {
 
   const pauseWorkout = () => {
     const completed = Object.values(logs).filter((item) => item.done).length;
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify({
       userId: session.user.id,
       planId,
       idempotencyKey,
@@ -273,12 +294,41 @@ export default function ActiveWorkoutPage() {
       elapsedSeconds,
       paused: true,
       updatedAt: Date.now(),
-    }));
+    })); } catch { setDraftError(true); return; }
+    completedSave.current = true;
     navigate("/dashboard");
+  };
+
+  const changeSetCount = (amount) => {
+    const count = Number(currentExercise.sets) || 1;
+    if (count + amount < 1 || count + amount > 10) return;
+    if (amount < 0 && logs[slotKey(currentExercise, activeIndex, count - 1)]?.done) return;
+    const updated = { ...workout, exercises: exercises.map((exercise, index) => index === activeIndex ? { ...exercise, sets: count + amount } : exercise) };
+    setWorkout(updated); setLogs((current) => createLogs(updated, current));
+  };
+
+  const reuseWeights = () => {
+    setLogs((current) => {
+      const next = { ...current };
+      for (let index = 0; index < Number(currentExercise.sets); index += 1) {
+        const key = slotKey(currentExercise, activeIndex, index);
+        const previous = previousSets.find((log) => log.set_number === index + 1);
+        if (previous && !next[key]?.done && !next[key]?.skipped) next[key] = { ...next[key], weight: Number(previous.weight_lbs) || 0 };
+      }
+      return next;
+    });
   };
 
   const saveWorkout = async () => {
     if (saving) return;
+    if (completedSets === 0) {
+      notifications.show({ title: "Log at least one completed set", message: "A fully skipped workout shouldn't count toward your training totals.", color: "orange" });
+      return;
+    }
+    if (allLogEntries.some((log) => log.done && (!Number.isFinite(Number(log.reps)) || Number(log.reps) <= 0 || !Number.isFinite(Number(log.weight)) || Number(log.weight) < 0))) {
+      notifications.show({ title: "Check completed sets", message: "Each completed set needs a positive amount and a valid weight (zero for bodyweight).", color: "red" });
+      return;
+    }
     setSaving(true);
     let createdSessionId = null;
     try {
@@ -350,8 +400,10 @@ export default function ActiveWorkoutPage() {
         if (logsError) throw logsError;
       }
 
+      completedSave.current = true;
       localStorage.removeItem(DRAFT_KEY);
       setFinished(true);
+      setFinishedElapsed(elapsedSeconds);
       setFinishOpen(false);
       setRestEndsAt(null);
       setSummaryOpen(true);
@@ -367,6 +419,7 @@ export default function ActiveWorkoutPage() {
 
   return (
     <Stack gap="lg">
+      {draftError && <Alert color="red" title="Device backup unavailable">Your browser couldn't save a local draft. Keep this page open and save your workout before leaving.</Alert>}
       <Paper className="surface-raised" p="md" style={{ position: "sticky", top: 84, zIndex: 90 }}>
         <Group justify="space-between" wrap="nowrap">
           <Box><Text className="eyebrow">{workout.day} · {workout.type}</Text><Group gap="xs" mt={3}><Clock3 size={16} /><Text fw={850} ff="monospace">{formatTime(elapsedSeconds)}</Text></Group></Box>
@@ -390,6 +443,15 @@ export default function ActiveWorkoutPage() {
 
           <Group mt="lg"><Button variant="light" color="gray" leftSection={<Info size={16} />} onClick={() => setGuideOpen(true)}>Form guide</Button><Button variant="subtle" leftSection={<RefreshCw size={16} />} onClick={() => setSwapOpen(true)}>Swap</Button></Group>
 
+          <Paper className="surface" p="md" mt="lg">
+            <Text className="eyebrow">Last time you did this</Text>
+            {historyLoading ? <Text size="sm" c="dimmed" mt={5}>Loading your previous sets…</Text> : historyError ? <Text size="sm" c="dimmed" mt={5}>Previous sets couldn't load. Your current workout is unaffected.</Text> : previousSets.length ? <>
+              <Text size="xs" c="dimmed" mt={5}>{formatTimestamp(previousSets[0].completed_at, { hour: undefined, minute: undefined }, userTimeZone(session.user))}</Text>
+              <Text size="sm" mt="xs">{previousSets.map((log) => `${log.weight_lbs || 0} lb × ${log.actual_value ?? log.actual_reps} ${log.actual_unit || "reps"}`).join(" · ")}</Text>
+              <Button variant="subtle" size="xs" px={0} mt="xs" onClick={reuseWeights}>Use last weights</Button>
+            </> : <Text size="sm" c="dimmed" mt={5}>Your first logged sets here will give you a baseline for next time.</Text>}
+          </Paper>
+
           <Divider my="xl" />
           <Group px="xs" mb="xs" wrap="nowrap"><Text className="eyebrow" w={40}>Set</Text><Text className="eyebrow" style={{ flex: 1 }}>Weight (lb)</Text><Text className="eyebrow" style={{ flex: 1 }}>{currentMetric.label}</Text><Text className="eyebrow" w={88} ta="right">Status</Text></Group>
           <Stack gap="xs">
@@ -412,6 +474,8 @@ export default function ActiveWorkoutPage() {
               );
             })}
           </Stack>
+
+          <Group mt="md" gap="xs"><Button variant="light" size="xs" leftSection={<Plus size={14} />} disabled={Number(currentExercise.sets) >= 10} onClick={() => changeSetCount(1)}>Add set</Button><Button variant="subtle" color="gray" size="xs" disabled={Number(currentExercise.sets) <= 1 || logs[slotKey(currentExercise, activeIndex, Number(currentExercise.sets) - 1)]?.done} onClick={() => changeSetCount(-1)}>Remove last uncompleted set</Button></Group>
 
           <Group justify="space-between" mt="xl">
             <Button variant="subtle" color="gray" leftSection={<ChevronLeft size={17} />} disabled={activeIndex === 0} onClick={() => setActiveIndex((value) => Math.max(0, value - 1))}>Previous</Button>

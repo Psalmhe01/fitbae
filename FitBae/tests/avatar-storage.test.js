@@ -33,6 +33,8 @@ before(async () => {
   // gen_random_uuid is native to PostgreSQL; this harness needs no pgcrypto.
   await db.exec(core.replace("create extension if not exists pgcrypto;", ""));
   await db.exec(await readFile(new URL("../supabase/migrations/202609080001_profile_avatars.sql", import.meta.url), "utf8"));
+  await db.exec("set timezone = 'UTC'; alter table public.partner_notes alter column created_at type timestamp without time zone using created_at at time zone 'UTC'");
+  await db.exec(await readFile(new URL("../supabase/migrations/202609080002_training_and_chat.sql", import.meta.url), "utf8"));
   await db.exec("grant select, insert, update, delete on all tables in schema public to authenticated");
   for (const id of [owner, partner, stranger]) {
     await db.query("insert into auth.users (id, raw_user_meta_data) values ($1, $2)", [id, { fitbae_avatar: { type: "upload", path: `${id}/avatar-test.jpg` }, private_test_field: "not shared" }]);
@@ -40,7 +42,7 @@ before(async () => {
 });
 
 beforeEach(async () => {
-  await db.exec("reset role; truncate storage.objects, public.partnerships");
+  await db.exec("reset role; truncate storage.objects, public.partnerships, public.partner_notes");
   await asUser(owner);
   await db.query("insert into storage.objects (bucket_id, name) values ('avatar-photos', $1)", [picture]);
 });
@@ -107,4 +109,17 @@ test("anonymous clients cannot read files or call the partner avatar function", 
   await asUser("", "anon");
   assert.equal((await db.query("select * from storage.objects")).rows.length, 0);
   await assert.rejects(db.query("select public.get_partner_avatar($1)", [owner]), /permission denied/);
+});
+
+test("chat timestamps have offsets and recipients can acknowledge but not rewrite a message", async () => {
+  const id = await invite();
+  await asUser(partner);
+  await db.query("update public.partnerships set status = 'accepted' where id = $1", [id]);
+  await asUser(owner);
+  const { rows } = await db.query("insert into public.partner_notes (author_id, recipient_id, content) values ($1, $2, 'Original note') returning id", [owner, partner]);
+  await asUser(partner);
+  await db.query("update public.partner_notes set seen = true where id = $1", [rows[0].id]);
+  await assert.rejects(db.query("update public.partner_notes set content = 'Forged' where id = $1", [rows[0].id]), /Only the read receipt/);
+  const type = await db.query("select data_type from information_schema.columns where table_schema = 'public' and table_name = 'partner_notes' and column_name = 'created_at'");
+  assert.equal(type.rows[0].data_type, "timestamp with time zone");
 });

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
-  ActionIcon, Alert, Box, Button, Center, Divider, Group,
-  Loader, Modal, Paper, Progress, SimpleGrid, Stack, Text, Textarea,
+  ActionIcon, Alert, Box, Button, Center, Group,
+  Loader, Modal, Paper, Progress, SimpleGrid, Stack, Text,
   TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { isMissingDatabaseFunction, supabase } from "@/lib/supabase";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
+import { PartnerChat } from "@/components/PartnerChat";
 
 const weekStart = () => {
   const date = new Date();
@@ -21,26 +22,19 @@ const weekStart = () => {
   return date.toISOString();
 };
 
-const formatTime = (value) => value ? new Intl.DateTimeFormat(undefined, {
-  month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-}).format(new Date(value)) : "";
-
 export default function TogetherPage() {
   const { profile, session } = useOutletContext();
   const userId = session?.user?.id;
   const [relationship, setRelationship] = useState(null);
   const [partner, setPartner] = useState(null);
   const [partnerAvatar, setPartnerAvatar] = useState(null);
-  const [notes, setNotes] = useState([]);
   const [ownSessions, setOwnSessions] = useState([]);
   const [partnerSessions, setPartnerSessions] = useState(null);
   const [partnerMomentum, setPartnerMomentum] = useState(null);
   const [email, setEmail] = useState("");
-  const [note, setNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
-  const [noteOpen, setNoteOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
 
   const partnerId = useMemo(() => {
@@ -67,17 +61,13 @@ export default function TogetherPage() {
   const fetchPartnerDetails = useCallback(async () => {
     if (!partnerId || relationship?.status !== "accepted") {
       setPartner(null);
-      setNotes([]);
       setPartnerSessions(null);
       setPartnerMomentum(null);
       return;
     }
-    const [profileRpc, momentumRpc, notesResult] = await Promise.all([
+    const [profileRpc, momentumRpc] = await Promise.all([
       supabase.rpc("get_connected_partner"),
       supabase.rpc("get_partner_weekly_momentum", { p_week_start: weekStart() }),
-      supabase.from("partner_notes").select("*")
-        .or(`and(author_id.eq.${userId},recipient_id.eq.${partnerId}),and(author_id.eq.${partnerId},recipient_id.eq.${userId})`)
-        .order("created_at", { ascending: false }).limit(30),
     ]);
 
     let nextPartner = profileRpc.data?.[0] || null;
@@ -103,7 +93,6 @@ export default function TogetherPage() {
     }
 
     setPartner(nextPartner || { user_id: partnerId, name: "Your partner" });
-    setNotes(notesResult.data || []);
     setPartnerSessions(nextPartnerSessions);
     setPartnerMomentum(nextMomentum);
   }, [partnerId, relationship?.status, userId]);
@@ -119,15 +108,6 @@ export default function TogetherPage() {
     }).catch(() => {});
     return () => { active = false; };
   }, [partnerId, relationship?.status]);
-
-  useEffect(() => {
-    if (!userId || !partnerId || relationship?.status !== "accepted") return undefined;
-    const channel = supabase.channel(`together-notes-${userId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "partner_notes", filter: `recipient_id=eq.${userId}` }, (payload) => {
-        if (payload.new.author_id === partnerId) setNotes((current) => [payload.new, ...current]);
-      }).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [partnerId, relationship?.status, userId]);
 
   const invitePartner = async () => {
     const normalizedEmail = email.trim().toLowerCase();
@@ -189,7 +169,7 @@ export default function TogetherPage() {
     setWorking(false);
     if (removeError) notifications.show({ title: "Couldn't remove connection", message: removeError.message, color: "red" });
     else {
-      setRelationship(null); setPartner(null); setNotes([]); setPartnerMomentum(null); setDisconnectOpen(false);
+      setRelationship(null); setPartner(null); setPartnerMomentum(null); setDisconnectOpen(false);
       notifications.show({ title: "Connection removed", message: "Your workout history was not changed.", color: "gray" });
     }
   };
@@ -202,20 +182,6 @@ export default function TogetherPage() {
     });
     if (sendError) notifications.show({ title: "Couldn't send that", message: sendError.message, color: "red" });
     else notifications.show({ title: `Boost sent to ${partner?.name?.split(" ")[0] || "your partner"}`, color: "orange" });
-  };
-
-  const sendNote = async () => {
-    if (!note.trim() || !partnerId) return;
-    setWorking(true);
-    const { data, error: noteError } = await supabase.from("partner_notes").insert({
-      author_id: userId, recipient_id: partnerId, content: note.trim(),
-    }).select().single();
-    setWorking(false);
-    if (noteError) notifications.show({ title: "Message not sent", message: noteError.message, color: "red" });
-    else {
-      setNotes((current) => [data, ...current]); setNote(""); setNoteOpen(false);
-      notifications.show({ title: "Note sent", color: "green" });
-    }
   };
 
   if (loading) return <Center mih="55vh"><Loader color="brand" /></Center>;
@@ -237,7 +203,7 @@ export default function TogetherPage() {
                 </Box>
                 <Box><Text className="eyebrow" c="gray.5">Connected</Text><Title order={2} fz={30} mt={3}>{profile.name?.split(" ")[0]} + {partner?.name?.split(" ")[0] || "partner"}</Title><Text size="sm" c="gray.4" mt={4}>Two plans. One team.</Text></Box>
               </Group>
-              <Group><ActionIcon size={46} radius="xl" color="orange" onClick={sendHeart} aria-label={`Send encouragement to ${partner?.name || "your partner"}`}><Heart size={20} fill="currentColor" /></ActionIcon><Button color="brand" c="dark.9" leftSection={<MessageCircle size={17} />} onClick={() => setNoteOpen(true)}>Leave a note</Button></Group>
+              <Group><ActionIcon size={46} radius="xl" color="orange" onClick={sendHeart} aria-label={`Send encouragement to ${partner?.name || "your partner"}`}><Heart size={20} fill="currentColor" /></ActionIcon><Button color="brand" c="dark.9" leftSection={<MessageCircle size={17} />} onClick={() => document.getElementById("partner-message")?.focus()}>Message</Button></Group>
             </Group>
           </Paper>
 
@@ -247,17 +213,7 @@ export default function TogetherPage() {
           </SimpleGrid>
 
           <SimpleGrid cols={{ base: 1, md: 5 }} spacing="lg">
-            <Paper className="surface-raised together-notes" p="xl">
-              <Group justify="space-between"><Box><Text className="eyebrow">Shared notes</Text><Title order={2} fz="xl" mt={4}>A little encouragement</Title></Box><Button variant="light" leftSection={<Send size={16} />} onClick={() => setNoteOpen(true)}>Write</Button></Group>
-              <Divider my="lg" />
-              <Stack gap="sm">
-                {notes.slice(0, 8).map((item) => {
-                  const mine = item.author_id === userId;
-                  return <Box key={item.id} p="md" bg={mine ? "var(--brand-soft)" : "var(--surface-muted)"} style={{ borderRadius: 12, alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "88%" }}><Text size="xs" fw={800}>{mine ? "You" : partner?.name?.split(" ")[0]}</Text><Text size="sm" mt={4}>{item.content}</Text><Text size="xs" c="dimmed" mt={6}>{formatTime(item.created_at)}</Text></Box>;
-                })}
-                {!notes.length && <Stack align="center" py="xl"><MessageCircle size={25} color="var(--ink-soft)" /><Text size="sm" c="dimmed" ta="center">No notes yet. Start with the thing you'd want to hear before a hard set.</Text></Stack>}
-              </Stack>
-            </Paper>
+            <PartnerChat key={partnerId} user={session.user} partner={partner || { user_id: partnerId, name: "Partner" }} />
 
             <Paper className="surface together-privacy" p="xl">
               <ThemeIcon variant="light" color="brand" size={48}><ShieldCheck size={22} /></ThemeIcon>
@@ -272,10 +228,6 @@ export default function TogetherPage() {
       ) : (
         <ConnectCard email={email} setEmail={setEmail} invite={invitePartner} working={working} wasDeclined={status === "declined"} />
       )}
-
-      <Modal opened={noteOpen} onClose={() => setNoteOpen(false)} title={`Note to ${partner?.name?.split(" ")[0] || "your partner"}`}>
-        <Stack><Textarea label="Message" placeholder="You've got this. I'll see you after the last set." minRows={4} maxLength={500} value={note} onChange={(event) => setNote(event.currentTarget.value)} /><Group justify="space-between"><Text size="xs" c="dimmed">{note.length}/500</Text><Button onClick={sendNote} loading={working} disabled={!note.trim()} rightSection={<Send size={16} />}>Send note</Button></Group></Stack>
-      </Modal>
 
       <Modal opened={disconnectOpen} onClose={() => setDisconnectOpen(false)} title={status === "accepted" ? "Disconnect from your partner?" : "Cancel this request?"}>
         <Stack><Text size="sm" c="dimmed">{status === "accepted" ? "This removes the FitBae connection. It won't delete either person's workout history." : "You can send a new request later."}</Text><Group justify="flex-end"><Button variant="subtle" color="gray" onClick={() => setDisconnectOpen(false)}>Keep it</Button><Button color="red" onClick={removeRelationship} loading={working}>{status === "accepted" ? "Disconnect" : "Cancel request"}</Button></Group></Stack>

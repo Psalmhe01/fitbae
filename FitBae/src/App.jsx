@@ -6,7 +6,7 @@ import {
   UnstyledButton, rem,
 } from "@mantine/core";
 import {
-  Bell, CalendarRange, ChevronDown, CircleAlert, Heart, History, LayoutDashboard,
+  Bell, BookOpen, CalendarRange, ChevronDown, CircleAlert, Heart, History, LayoutDashboard,
   LogOut, MessageCircle, RefreshCw, Settings, User,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -14,20 +14,15 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandMark } from "@/components/BrandMark";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { PageErrorBoundary } from "@/components/PageErrorBoundary";
+import { formatTimestamp, timestampMs, userTimeZone } from "@/lib/dates";
 
 const nav = [
   { to: "/dashboard", label: "Today", icon: LayoutDashboard },
   { to: "/plan", label: "Plan", icon: CalendarRange },
   { to: "/together", label: "Together", icon: Heart },
   { to: "/history", label: "Progress", icon: History },
+  { to: "/library", label: "Library", icon: BookOpen },
 ];
-
-const formatDateTime = (value) => {
-  if (!value) return "";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-  }).format(new Date(value));
-};
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -55,7 +50,7 @@ export default function App() {
       id: `note-${item.id}`, rowId: item.id, type: "note",
       content: item.content, created_at: item.created_at,
     }));
-    setNotifications([...reactions, ...notes].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+    setNotifications([...reactions, ...notes].sort((a, b) => timestampMs(b.created_at) - timestampMs(a.created_at)));
   }, []);
 
   useEffect(() => {
@@ -101,6 +96,8 @@ export default function App() {
 
   useEffect(() => {
     if (!session?.user?.id) return undefined;
+    const refreshReadState = () => fetchNotifications(session.user.id);
+    window.addEventListener("fitbae-notifications-read", refreshReadState);
     const channel = supabase.channel(`notifications-${session.user.id}`)
       .on("postgres_changes", {
         event: "INSERT", schema: "public", table: "partner_reactions",
@@ -111,7 +108,7 @@ export default function App() {
         filter: `recipient_id=eq.${session.user.id}`,
       }, () => fetchNotifications(session.user.id))
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(channel); window.removeEventListener("fitbae-notifications-read", refreshReadState); };
   }, [fetchNotifications, session?.user?.id]);
 
   const markAllRead = async () => {
@@ -209,7 +206,7 @@ export default function App() {
                 {isWorkout ? "Session in progress" : `Welcome back, ${profile?.name?.split(" ")[0] || "athlete"}`}
               </Text>
               <Group gap={4}>
-                {!isWorkout && <NotificationMenu items={notifications} markAllRead={markAllRead} />}
+                {!isWorkout && <NotificationMenu items={notifications} markAllRead={markAllRead} timeZone={userTimeZone(session?.user)} />}
                 <ThemeToggle />
                 {!isWorkout && (
                   <Box hiddenFrom="md">
@@ -293,7 +290,7 @@ function UserMenu({ profile, session, navigate, signOut, inverted = false }) {
   );
 }
 
-function NotificationMenu({ items, markAllRead }) {
+function NotificationMenu({ items, markAllRead, timeZone }) {
   return (
     <Popover width={320} position="bottom-end" shadow="lg">
       <Popover.Target>
@@ -315,7 +312,7 @@ function NotificationMenu({ items, markAllRead }) {
           ) : items.map((item) => (
             <Group key={item.id} align="flex-start" wrap="nowrap" p="md" style={{ borderBottom: "1px solid var(--line)" }}>
               <Box mt={2}>{item.type === "reaction" ? <Heart size={16} color="var(--brand-coral)" fill="var(--brand-coral)" /> : <MessageCircle size={16} />}</Box>
-              <Box style={{ minWidth: 0 }}><Text size="sm" fw={600}>{item.content}</Text><Text size="xs" c="dimmed" mt={3}>{formatDateTime(item.created_at)}</Text></Box>
+              <Box style={{ minWidth: 0 }}><Text size="sm" fw={600}>{item.content}</Text><Text size="xs" c="dimmed" mt={3}>{formatTimestamp(item.created_at, {}, timeZone)}</Text></Box>
             </Group>
           ))}
         </ScrollArea.Autosize>

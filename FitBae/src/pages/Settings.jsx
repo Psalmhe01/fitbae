@@ -17,6 +17,7 @@ import { FITNESS_GOAL_OPTIONS, normalizeFitnessGoal } from "@/lib/fitnessConfig"
 import { equipmentCategories } from "@/lib/equipmentLibrary";
 import { equipmentLibrary } from "@/lib/equipmentLibrary";
 import { AvatarEditor } from "@/components/AvatarEditor";
+import { DisplayPreferences } from "@/components/DisplayPreferences";
 
 const editableFields = [
   "name", "age", "weight", "height_cm", "sex", "fitness_goal",
@@ -141,6 +142,7 @@ export default function SettingsPage() {
       {dirty && <Alert color="orange" icon={<CircleAlert size={17} />} title="Unsaved changes">Choose “Save profile” to leave this week's plan alone, or “Save & rebuild” to make a new one.</Alert>}
 
       <AvatarEditor user={session.user} name={shellProfile.name} onUserChange={(user) => setSession((current) => ({ ...current, user }))} />
+      <DisplayPreferences user={session.user} onUserChange={(user) => setSession((current) => ({ ...current, user }))} />
 
       <SettingsSection title="Personal details" description="Used for your profile and sensible input checks. Exact measurements are not sent to the plan generator.">
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">

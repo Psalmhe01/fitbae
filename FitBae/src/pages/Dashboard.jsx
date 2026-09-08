@@ -53,6 +53,7 @@ export default function Dashboard() {
     if (!session?.user?.id) return;
     setLoading(true);
     setError("");
+    try {
     const { data: latestPlan, error: planError } = await supabase
       .from("workout_plans").select("*").eq("user_id", session.user.id)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -65,7 +66,8 @@ export default function Dashboard() {
 
     let normalizedRecord = latestPlan;
     if (latestPlan?.plan_json) {
-      const result = normalizeAndValidateWorkoutPlan(latestPlan.plan_json, {
+      const raw = typeof latestPlan.plan_json === "string" ? JSON.parse(latestPlan.plan_json) : latestPlan.plan_json;
+      const result = normalizeAndValidateWorkoutPlan(raw, {
         selectedEquipment: profile?.equipment,
         expectedFrequency: profile?.gym_frequency,
       });
@@ -74,15 +76,10 @@ export default function Dashboard() {
     setPlanRecord(normalizedRecord);
 
     const requests = [];
-    if (latestPlan?.id) {
-      requests.push(
-        supabase.from("workout_sessions").select("id,day,workout_type,duration_seconds,finished_at,status")
-          .eq("user_id", session.user.id).eq("plan_id", latestPlan.id)
-          .eq("status", "completed").gte("finished_at", startOfLocalWeek().toISOString()),
-      );
-    } else {
-      requests.push(Promise.resolve({ data: [], error: null }));
-    }
+    requests.push(
+      supabase.from("workout_sessions").select("id,plan_id,day,workout_type,duration_seconds,finished_at,status")
+        .eq("user_id", session.user.id).eq("status", "completed").gte("finished_at", startOfLocalWeek().toISOString()),
+    );
     requests.push(
       supabase.from("partnerships").select("*")
         .or(`requester_id.eq.${session.user.id},recipient_id.eq.${session.user.id}`)
@@ -91,7 +88,7 @@ export default function Dashboard() {
     const [sessionsResult, partnershipResult] = await Promise.all(requests);
     const sessions = sessionsResult.data || [];
     setWeekSessions(sessions);
-    setCompletedDays(new Set(sessions.map((item) => item.day).filter(Boolean)));
+    setCompletedDays(new Set(sessions.filter((item) => item.plan_id === latestPlan?.id).map((item) => item.day).filter(Boolean)));
 
     if (partnershipResult.data) {
       const partnerId = partnershipResult.data.requester_id === session.user.id
@@ -108,7 +105,9 @@ export default function Dashboard() {
       setPartner(null);
     }
     setDraft(getStoredDraft(session.user.id));
-    setLoading(false);
+    } catch {
+      setError("Your dashboard couldn't load. Please retry; your saved workouts have not changed.");
+    } finally { setLoading(false); }
   }, [profile?.equipment, profile?.gym_frequency, session?.user?.id]);
 
   useEffect(() => { loadDashboard(); }, [loadDashboard]);
@@ -122,7 +121,7 @@ export default function Dashboard() {
   const schedule = planRecord?.plan_json?.weekly_schedule || [];
   const activeDays = schedule.filter((day) => !day.rest);
   const progress = activeDays.length
-    ? Math.min(100, (completedDays.size / activeDays.length) * 100)
+    ? Math.min(100, (weekSessions.length / activeDays.length) * 100)
     : 0;
 
   const today = DAY_NAMES[new Date().getDay()];
@@ -130,13 +129,14 @@ export default function Dashboard() {
   const nextWorkout = useMemo(() => {
     if (!schedule.length) return null;
     const todayIndex = DAY_NAMES.indexOf(today);
-    for (let offset = 0; offset < 7; offset += 1) {
+    for (let offset = 0; offset < 14; offset += 1) {
       const candidateName = DAY_NAMES[(todayIndex + offset) % 7];
       const candidate = schedule.find((day) => day.day === candidateName && !day.rest);
-      if (candidate) return { ...candidate, isToday: offset === 0 };
+      const daysUntilNextWeek = todayIndex === 0 ? 1 : 8 - todayIndex;
+      if (candidate && (!completedDays.has(candidateName) || offset >= daysUntilNextWeek)) return { ...candidate, isToday: offset === 0 };
     }
     return null;
-  }, [schedule, today]);
+  }, [completedDays, schedule, today]);
 
   const minutesThisWeek = weekSessions.reduce((sum, item) => sum + (Number(item.duration_seconds) || 0), 0) / 60;
 
@@ -164,7 +164,7 @@ export default function Dashboard() {
         selectedEquipment: profile.equipment,
         expectedFrequency: profile.gym_frequency,
       });
-      if (!normalized.valid) throw new Error(normalized.errors[0] || "The generated plan was incomplete.");
+      if (!normalized.valid) throw new Error(normalized.errors[0]?.message || "The generated plan was incomplete.");
       const { data, error: insertError } = await supabase.from("workout_plans").insert({
         user_id: session.user.id,
         plan_json: normalized.plan,
@@ -174,7 +174,6 @@ export default function Dashboard() {
       if (insertError) throw insertError;
       setPlanRecord(data);
       setCompletedDays(new Set());
-      setWeekSessions([]);
       setConfirmRegenerate(false);
       notifications.show({ title: "Your new week is ready", message: "Review it and swap anything that doesn't feel right.", color: "green" });
     } catch (generationError) {
@@ -252,7 +251,7 @@ export default function Dashboard() {
             )}
             <Group mt="sm">
               {nextWorkout && <Button color="brand" c="dark.9" size="lg" onClick={() => startWorkout(nextWorkout)} rightSection={<ArrowRight size={18} />}>Start workout</Button>}
-              <Button component={Link} to="/plan" variant="subtle" color="gray" c="gray.3">View details</Button>
+              <Button component={Link} to={nextWorkout ? `/plan?day=${nextWorkout.day}` : "/plan"} variant="subtle" color="gray" c="gray.3">View details</Button>
             </Group>
           </Stack>
         </Paper>
@@ -273,7 +272,7 @@ export default function Dashboard() {
 
       <Box>
         <Group justify="space-between" align="flex-end" mb="md">
-          <Box><Text className="eyebrow">Your week</Text><Title order={2} fz={28} mt={4}>{completedDays.size} of {activeDays.length} sessions done</Title></Box>
+          <Box><Text className="eyebrow">Your week · across all plans</Text><Title order={2} fz={28} mt={4}>{weekSessions.length} of {activeDays.length} sessions done</Title></Box>
           <Button variant="subtle" color="gray" leftSection={<Settings2 size={16} />} component={Link} to="/plan">Adjust plan</Button>
         </Group>
         <Paper className="surface" p="md">
@@ -304,7 +303,7 @@ export default function Dashboard() {
       </Box>
 
       <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
-        <Metric icon={Flame} label="This week" value={`${completedDays.size}`} suffix="sessions" />
+        <Metric icon={Flame} label="This week" value={`${weekSessions.length}`} suffix="sessions" />
         <Metric icon={Clock3} label="Time trained" value={`${Math.round(minutesThisWeek)}`} suffix="minutes" />
         <Metric icon={CalendarDays} label="Plan rhythm" value={`${activeDays.length}×`} suffix="per week" />
         <Metric icon={Dumbbell} label="Session length" value={`${profile.workout_duration}`} suffix="minutes" />

@@ -11,6 +11,7 @@ import { PageErrorBoundary } from "./components/PageErrorBoundary.jsx";
 
 const App = lazy(() => import("./App.jsx"));
 const LandingPage = lazy(() => import("./pages/LandingPage.jsx"));
+const AuthPage = lazy(() => import("./pages/Auth.jsx"));
 const OnboardingPage = lazy(() => import("./pages/Onboarding.jsx"));
 const DashboardPage = lazy(() => import("./pages/Dashboard.jsx"));
 const PlanPage = lazy(() => import("./pages/Plan.jsx"));
@@ -20,6 +21,7 @@ const ProfilePage = lazy(() => import("./pages/Profile.jsx"));
 const SettingsPage = lazy(() => import("./pages/Settings.jsx"));
 const SessionDetailPage = lazy(() => import("./pages/SessionDetail.jsx"));
 const ActiveWorkoutPage = lazy(() => import("./pages/ActiveWorkout.jsx"));
+const LibraryPage = lazy(() => import("./pages/Library.jsx"));
 
 function RouteFallback() {
   return <Center mih="100svh" className="app-shell"><Loader color="brand" /></Center>;
@@ -33,10 +35,12 @@ createRoot(document.getElementById("root")).render(
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
+            <Route path="/auth" element={<AuthPage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route element={<App />}>
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="plan" element={<PlanPage />} />
+              <Route path="library" element={<LibraryPage />} />
               <Route path="together" element={<TogetherPage />} />
               <Route path="history" element={<HistoryPage />} />
               <Route path="history/:sessionId" element={<SessionDetailPage />} />

@@ -6,10 +6,7 @@ import {
 } from "@mantine/core";
 import { ArrowLeft, CalendarDays, Check, Clock3, Dumbbell, RotateCcw, Weight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-
-const formatDateTime = (value) => value ? new Intl.DateTimeFormat(undefined, {
-  weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
-}).format(new Date(value)) : "Date unavailable";
+import { formatTimestamp, userTimeZone } from "@/lib/dates";
 
 export default function SessionDetailPage() {
   const { sessionId } = useParams();
@@ -70,7 +67,9 @@ export default function SessionDetailPage() {
         <Metric icon={Dumbbell} label="Sets completed" value={`${completedLogs.length}`} />
       </SimpleGrid>
 
-      <Paper className="surface" p="lg"><Group gap="sm"><CalendarDays size={17} color="var(--ink-soft)" /><Text size="sm" fw={700}>{formatDateTime(workoutSession.finished_at || workoutSession.started_at)}</Text></Group></Paper>
+      <Paper className="surface" p="lg"><Group gap="sm"><CalendarDays size={17} color="var(--ink-soft)" /><Text size="sm" fw={700}>{formatTimestamp(workoutSession.finished_at || workoutSession.started_at, { year: "numeric", timeZoneName: "short" }, userTimeZone(authSession.user))}</Text></Group></Paper>
+
+      {workoutSession.notes && <Paper className="surface" p="lg"><Text className="eyebrow">Your session note</Text><Text size="sm" mt="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{workoutSession.notes}</Text></Paper>}
 
       <Box>
         <Text className="eyebrow">Set by set</Text>
