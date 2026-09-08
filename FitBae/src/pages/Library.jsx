@@ -39,7 +39,7 @@ export default function LibraryPage() {
         <Title order={2} fz="xl">{exercise.name}</Title>
         <Text size="sm" c="dimmed">{exercise.equipmentIds.length ? exercise.equipmentIds.map((id) => getEquipmentById(id)?.name || id).join(" + ") : "No equipment needed"}</Text>
         <Text size="xs" c="dimmed" tt="capitalize">{exercise.difficulty} · {exercise.movementPattern.replaceAll("_", " ")}</Text>
-        <Button variant="light" color="gray" mt="auto" leftSection={<BookOpen size={16} />} onClick={() => setGuide(exercise)}>View {exercise.name} guide</Button>
+        <Button variant="light" color="gray" mt="auto" aria-label={`View ${exercise.name} guide`} leftSection={<BookOpen size={16} />} onClick={() => setGuide(exercise)}>View form guide</Button>
       </Stack></Paper>)}
     </SimpleGrid>
     {!results.length && <Paper className="surface" p="xl"><Title order={2} fz="xl">No exercises match yet.</Title><Text c="dimmed" mt="sm">Try another search or clear a filter. Favorites stay private to this account on this device.</Text><Button variant="subtle" mt="md" onClick={() => { setQuery(""); setMuscle(null); setDifficulty(null); setOnlyFavorites(false); }}>Clear filters</Button></Paper>}

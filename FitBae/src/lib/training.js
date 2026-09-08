@@ -22,7 +22,7 @@ export function repVolume(log) {
 export function personalBests(sessions) {
   const best = new Map();
   for (const session of sessions) for (const log of session.exercise_logs || []) {
-    if (log.skipped || (log.actual_unit && log.actual_unit !== "reps") || Number(log.actual_reps) <= 0 || Number(log.weight_lbs) <= 0) continue;
+    if (log.skipped || !log.exercise_name || (log.actual_unit && log.actual_unit !== "reps") || !Number.isFinite(Number(log.actual_reps)) || !Number.isFinite(Number(log.weight_lbs)) || Number(log.actual_reps) <= 0 || Number(log.weight_lbs) <= 0) continue;
     const key = `${log.exercise_name}:${log.equipment_id || ""}`;
     const previous = best.get(key);
     if (!previous || Number(log.weight_lbs) > previous.weight || (Number(log.weight_lbs) === previous.weight && Number(log.actual_reps) > previous.reps)) {

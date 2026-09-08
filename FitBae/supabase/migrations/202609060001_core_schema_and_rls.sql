@@ -72,6 +72,7 @@ create table if not exists public.exercise_logs (
 );
 
 alter table public.exercise_logs
+  add column if not exists equipment_id text,
   add column if not exists actual_value numeric not null default 0,
   add column if not exists actual_unit text not null default 'reps';
 
@@ -176,8 +177,8 @@ create policy partner_notes_author_insert on public.partner_notes for insert
     and exists (
       select 1 from public.partnerships p
       where p.status = 'accepted'
-        and ((p.requester_id = author_id and p.recipient_id = recipient_id)
-          or (p.requester_id = recipient_id and p.recipient_id = author_id))
+        and ((p.requester_id = partner_notes.author_id and p.recipient_id = partner_notes.recipient_id)
+          or (p.requester_id = partner_notes.recipient_id and p.recipient_id = partner_notes.author_id))
     )
   );
 drop policy if exists partner_notes_recipient_update on public.partner_notes;
@@ -194,8 +195,8 @@ create policy partner_reactions_sender_insert on public.partner_reactions for in
     and exists (
       select 1 from public.partnerships p
       where p.status = 'accepted'
-        and ((p.requester_id = sender_id and p.recipient_id = recipient_id)
-          or (p.requester_id = recipient_id and p.recipient_id = sender_id))
+        and ((p.requester_id = partner_reactions.sender_id and p.recipient_id = partner_reactions.recipient_id)
+          or (p.requester_id = partner_reactions.recipient_id and p.recipient_id = partner_reactions.sender_id))
     )
   );
 drop policy if exists partner_reactions_recipient_update on public.partner_reactions;

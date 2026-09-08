@@ -32,9 +32,19 @@ before(async () => {
   const core = await readFile(new URL("../supabase/migrations/202609060001_core_schema_and_rls.sql", import.meta.url), "utf8");
   // gen_random_uuid is native to PostgreSQL; this harness needs no pgcrypto.
   await db.exec(core.replace("create extension if not exists pgcrypto;", ""));
+  // Reproduce the inspected legacy installation before applying the core again.
+  await db.exec(`alter table public.exercise_logs drop column equipment_id, drop column actual_value, drop column actual_unit;
+    alter table public.exercise_logs add column equipment text;
+    alter table public.partner_notes add column pinned boolean default false;
+    create policy "Profiles are searchable by authenticated users" on public.profiles for select to authenticated using (true);
+    create policy "Users can manage their own notes" on public.partner_notes for all using (auth.uid() in (author_id, recipient_id));
+    create policy "Users can manage their own reactions" on public.partner_reactions for all using (auth.uid() in (sender_id, recipient_id));`);
+  await db.exec(core.replace("create extension if not exists pgcrypto;", ""));
   await db.exec(await readFile(new URL("../supabase/migrations/202609080001_profile_avatars.sql", import.meta.url), "utf8"));
   await db.exec("set timezone = 'UTC'; alter table public.partner_notes alter column created_at type timestamp without time zone using created_at at time zone 'UTC'");
   await db.exec(await readFile(new URL("../supabase/migrations/202609080002_training_and_chat.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../supabase/migrations/202609080003_legacy_access_compatibility.sql", import.meta.url), "utf8"));
+  await db.exec(await readFile(new URL("../supabase/migrations/202609080004_partner_message_scope.sql", import.meta.url), "utf8"));
   await db.exec("grant select, insert, update, delete on all tables in schema public to authenticated");
   for (const id of [owner, partner, stranger]) {
     await db.query("insert into auth.users (id, raw_user_meta_data) values ($1, $2)", [id, { fitbae_avatar: { type: "upload", path: `${id}/avatar-test.jpg` }, private_test_field: "not shared" }]);
@@ -42,7 +52,7 @@ before(async () => {
 });
 
 beforeEach(async () => {
-  await db.exec("reset role; truncate storage.objects, public.partnerships, public.partner_notes");
+  await db.exec("reset role; truncate storage.objects, public.partnerships, public.partner_notes, public.partner_reactions, public.workout_sessions, public.exercise_logs, public.profiles");
   await asUser(owner);
   await db.query("insert into storage.objects (bucket_id, name) values ('avatar-photos', $1)", [picture]);
 });
@@ -122,4 +132,70 @@ test("chat timestamps have offsets and recipients can acknowledge but not rewrit
   await assert.rejects(db.query("update public.partner_notes set content = 'Forged' where id = $1", [rows[0].id]), /Only the read receipt/);
   const type = await db.query("select data_type from information_schema.columns where table_schema = 'public' and table_name = 'partner_notes' and column_name = 'created_at'");
   assert.equal(type.rows[0].data_type, "timestamp with time zone");
+});
+
+test("workout saves are idempotent and preserve non-rep units and notes", async () => {
+  const save = "select public.finalize_workout($1::jsonb, $2::jsonb, $3::uuid) as id";
+  const payload = { duration_seconds: 300, notes: "Keep this note", finished_at: "2026-09-08T18:30:00Z" };
+  const logs = [{ exercise_name: "Plank", set_number: 1, actual_reps: 0, actual_value: 45, actual_unit: "seconds", skipped: false }];
+  const key = "44444444-4444-4444-8444-444444444444";
+  const first = await db.query(save, [payload, logs, key]);
+  const retry = await db.query(save, [payload, logs, key]);
+  assert.equal(first.rows[0].id, retry.rows[0].id);
+  assert.equal((await db.query("select * from public.workout_sessions")).rows.length, 1);
+  const result = await db.query("select actual_value::text, actual_unit, actual_reps from public.exercise_logs");
+  assert.deepEqual(result.rows, [{ actual_value: "45", actual_unit: "seconds", actual_reps: 0 }]);
+  assert.equal((await db.query("select notes from public.workout_sessions")).rows[0].notes, "Keep this note");
+  await asUser(stranger);
+  assert.equal((await db.query("select * from public.workout_sessions")).rows.length, 0);
+  assert.equal((await db.query("select * from public.exercise_logs")).rows.length, 0);
+});
+
+test("an invalid later set rolls back the entire workout transaction", async () => {
+  const logs = [{ exercise_name: "Squat", set_number: 1, actual_reps: 8 }, { exercise_name: "Squat", set_number: 2, actual_reps: "invalid" }];
+  await assert.rejects(db.query("select public.finalize_workout($1::jsonb, $2::jsonb, $3::uuid)", [{ duration_seconds: 300 }, logs, "55555555-5555-4555-8555-555555555555"]), /invalid input syntax/);
+  assert.equal((await db.query("select * from public.workout_sessions")).rows.length, 0);
+  assert.equal((await db.query("select * from public.exercise_logs")).rows.length, 0);
+});
+
+test("legacy policies no longer expose full profiles or allow forged messages", async () => {
+  await db.query("insert into public.profiles (user_id, name, email, fitness_goal, gym_frequency, workout_duration, experience_level, weight) values ($1, 'Test Owner', 'owner@example.test', 'strength', 3, 45, 'beginner', 150)", [owner]);
+  await asUser(stranger);
+  assert.equal((await db.query("select * from public.profiles")).rows.length, 0);
+  // Name/ID lookup remains available without disclosing body measurements.
+  assert.deepEqual((await db.query("select * from public.find_partner_by_email('owner@example.test')")).rows, [{ user_id: owner, name: "Test Owner" }]);
+  await assert.rejects(db.query("insert into public.partner_notes (author_id, recipient_id, content) values ($1, $2, 'Forged')", [owner, stranger]), /row-level security/);
+  await assert.rejects(db.query("insert into public.partner_reactions (sender_id, recipient_id) values ($1, $2)", [owner, stranger]), /row-level security/);
+});
+
+test("a recipient cannot edit encouragement or legacy note fields", async () => {
+  const id = await invite();
+  await asUser(partner);
+  await db.query("update public.partnerships set status = 'accepted' where id = $1", [id]);
+  await asUser(owner);
+  const reaction = await db.query("insert into public.partner_reactions (sender_id, recipient_id, message) values ($1, $2, 'You can do it') returning id", [owner, partner]);
+  const note = await db.query("insert into public.partner_notes (author_id, recipient_id, content) values ($1, $2, 'Hello') returning id", [owner, partner]);
+  await asUser(partner);
+  await db.query("update public.partner_reactions set seen = true where id = $1", [reaction.rows[0].id]);
+  await assert.rejects(db.query("update public.partner_reactions set message = 'Changed' where id = $1", [reaction.rows[0].id]), /Only the read receipt/);
+  await assert.rejects(db.query("update public.partner_notes set pinned = true where id = $1", [note.rows[0].id]), /Only the read receipt/);
+});
+
+test("a set cannot be attached to someone else's workout", async () => {
+  const session = await db.query("insert into public.workout_sessions (user_id) values ($1) returning id", [owner]);
+  await asUser(stranger);
+  await assert.rejects(db.query("insert into public.exercise_logs (session_id, user_id, exercise_name, set_number) values ($1, $2, 'Squat', 1)", [session.rows[0].id, stranger]), /must belong to your own/);
+});
+
+test("both partners can send messages and encouragement, but never to unrelated recipients", async () => {
+  const id = await invite();
+  await asUser(partner);
+  await db.query("update public.partnerships set status = 'accepted' where id = $1", [id]);
+  for (const [sender, recipient] of [[owner, partner], [partner, owner]]) {
+    await asUser(sender);
+    await db.query("insert into public.partner_notes (author_id, recipient_id, content) values ($1, $2, 'Hello partner')", [sender, recipient]);
+    await db.query("insert into public.partner_reactions (sender_id, recipient_id) values ($1, $2)", [sender, recipient]);
+    await assert.rejects(db.query("insert into public.partner_notes (author_id, recipient_id, content) values ($1, $2, 'Wrong recipient')", [sender, stranger]), /row-level security/);
+    await assert.rejects(db.query("insert into public.partner_reactions (sender_id, recipient_id) values ($1, $2)", [sender, stranger]), /row-level security/);
+  }
 });

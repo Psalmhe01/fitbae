@@ -1,6 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import { access } from "node:fs/promises";
-import { constants } from "node:fs";
 import { adminEnvironment } from "./admin-env.mjs";
 import { normalizeWorkoutPlan, WEEK_DAYS } from "../src/lib/workoutPlan.js";
 
@@ -75,8 +73,6 @@ try {
     }
   }
   if (mode === "--create" && accounts.length === 2) console.log("Both test profiles are ready. Connect them from Together to test the invitation/acceptance flow.");
-  // Check the credentials file is ignored separately during setup; never print passwords.
-  await access(new URL("../.env", import.meta.url), constants.R_OK);
 } catch (error) {
   console.error(`Test-account setup failed (${error.code || error.status || "REQUEST_FAILED"}). No existing account passwords were changed.`);
   process.exitCode = 1;

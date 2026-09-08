@@ -33,10 +33,12 @@ export default function LandingPage() {
   const [session, setSession] = useState(null);
 
   useEffect(() => {
+    let active = true;
     supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setCheckingSession(false);
-    });
+      if (active) setSession(data.session);
+    }).catch(() => { /* Keep sign-in available if session recovery fails. */ })
+      .finally(() => { if (active) setCheckingSession(false); });
+    return () => { active = false; };
   }, []);
 
   const openAccount = (mode = "signin") => navigate(session ? "/dashboard" : `/auth?mode=${mode}`);

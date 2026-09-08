@@ -18,15 +18,18 @@ export default function AuthPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [resetReady, setResetReady] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const lock = useRef(false);
 
   useEffect(() => {
     let active = true;
+    setCheckingSession(true);
     supabase.auth.getSession().then(({ data }) => {
       if (!active) return;
       if (mode === "reset") setResetReady(Boolean(data.session));
       else if (data.session) navigate("/dashboard", { replace: true });
-    }).catch(() => { if (active) setError("Sign-in could not be checked. Please try again."); });
+    }).catch(() => { if (active) setError("Sign-in could not be checked. Please try again."); })
+      .finally(() => { if (active) setCheckingSession(false); });
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY" || mode === "reset") setResetReady(Boolean(session));
     });
@@ -74,7 +77,7 @@ export default function AuthPage() {
         navigate("/dashboard", { replace: true });
       }
     } catch (authError) {
-      setError(authError.code === "invalid_credentials" ? "Email or password is incorrect." : authError.message || "We couldn't complete that. Please try again.");
+      setError(authError.code === "invalid_credentials" || /invalid login credentials/i.test(authError.message || "") ? "Email or password is incorrect." : authError.message || "We couldn't complete that. Please try again.");
     } finally { lock.current = false; setBusy(false); }
   };
 
@@ -100,6 +103,7 @@ export default function AuthPage() {
           <Text c="dimmed" mt="sm" mb="xl">{mode === "signup" ? "Create your account, then build a week that fits you." : mode === "forgot" ? "We'll send you a secure link to choose a new password." : mode === "reset" ? "Choose a password you don't use elsewhere." : "Your next session—and your teammate—are waiting."}</Text>
           <form onSubmit={submit}>
             <Stack>
+              {mode === "reset" && !checkingSession && !resetReady && <Alert color="orange" role="alert">This reset link is missing or has expired. Request a new link to continue.<Button variant="subtle" mt="xs" onClick={() => changeMode("forgot")}>Request a new reset link</Button></Alert>}
               {mode === "signup" && <TextInput label="Name or nickname" value={name} onChange={(e) => setName(e.currentTarget.value)} autoComplete="given-name" maxLength={60} required disabled={busy} />}
               {mode !== "reset" && <TextInput label="Email" type="email" value={email} onChange={(e) => setEmail(e.currentTarget.value)} autoComplete="email" required disabled={busy} leftSection={<Mail size={17} />} />}
               {mode !== "forgot" && <PasswordInput label={mode === "reset" ? "New password" : "Password"} value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoComplete={mode === "signin" ? "current-password" : "new-password"} required disabled={busy} description={mode !== "signin" ? "At least 8 characters. A longer, unique passphrase is better." : undefined} />}

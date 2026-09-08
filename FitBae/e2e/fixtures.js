@@ -41,6 +41,7 @@ export const test = base.extend({
       uploads: [], removed: [], authUpdates: [], workouts: [], connected: false,
       history: [], exerciseLogs: [], messages: [], messageError: false,
       authError: false, authRequests: [], signupConfirmation: true,
+      workoutError: null,
     };
     const session = { access_token: "e2e-access-token", refresh_token: "e2e-refresh-token", token_type: "bearer", expires_in: 86400, expires_at: Math.floor(Date.now() / 1000) + 86400, user: state.user };
     await page.addInitScript((initialSession) => {
@@ -54,7 +55,7 @@ export const test = base.extend({
     await page.route("https://fitbae-e2e.supabase.co/**", async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      const json = (body, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+      const json = (body, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "x-supabase-api-version": "2024-01-01" }, body: JSON.stringify(body) });
       const method = request.method();
       if (url.pathname.endsWith("/auth/v1/token")) {
         state.authRequests.push({ type: "signin", ...request.postDataJSON() });
@@ -89,7 +90,7 @@ export const test = base.extend({
       if (url.pathname.endsWith("/rpc/get_connected_partner")) return json(state.connected ? [{ user_id: PARTNER_ID, name: "Sam", gym_frequency: 2 }] : []);
       if (url.pathname.endsWith("/rpc/get_partner_weekly_momentum")) return json([{ session_count: 1, total_minutes: 42 }]);
       if (url.pathname.endsWith("/rpc/get_partner_avatar")) return json({ type: "preset", id: "tide" });
-      if (url.pathname.endsWith("/rpc/finalize_workout")) { state.workouts.push(request.postDataJSON()); return json("44444444-4444-4444-8444-444444444444"); }
+      if (url.pathname.endsWith("/rpc/finalize_workout")) { state.workouts.push(request.postDataJSON()); return state.workoutError ? json(state.workoutError, 400) : json("44444444-4444-4444-8444-444444444444"); }
       if (url.pathname.endsWith("/profiles")) {
         if (method === "PATCH") state.profile = { ...state.profile, ...request.postDataJSON() };
         return json(state.profile);

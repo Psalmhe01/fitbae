@@ -145,6 +145,7 @@ export default function ActiveWorkoutPage() {
   const [draftError, setDraftError] = useState(false);
   const restAlerted = useRef(false);
   const completedSave = useRef(false);
+  const saveLock = useRef(false);
   const currentName = workout?.exercises?.[activeIndex]?.name;
 
   useEffect(() => {
@@ -272,8 +273,12 @@ export default function ActiveWorkoutPage() {
   };
 
   const discardWorkout = () => {
+    try { localStorage.removeItem(DRAFT_KEY); }
+    catch {
+      notifications.show({ title: "Draft could not be discarded", message: "Your browser blocked storage access. Keep this session open and retry.", color: "red" });
+      return;
+    }
     completedSave.current = true;
-    localStorage.removeItem(DRAFT_KEY);
     setFinished(true);
     navigate("/dashboard", { replace: true });
   };
@@ -320,7 +325,7 @@ export default function ActiveWorkoutPage() {
   };
 
   const saveWorkout = async () => {
-    if (saving) return;
+    if (saveLock.current || completedSave.current) return;
     if (completedSets === 0) {
       notifications.show({ title: "Log at least one completed set", message: "A fully skipped workout shouldn't count toward your training totals.", color: "orange" });
       return;
@@ -329,8 +334,8 @@ export default function ActiveWorkoutPage() {
       notifications.show({ title: "Check completed sets", message: "Each completed set needs a positive amount and a valid weight (zero for bodyweight).", color: "red" });
       return;
     }
+    saveLock.current = true;
     setSaving(true);
-    let createdSessionId = null;
     try {
       const sessionPayload = {
         plan_id: planId,
@@ -373,46 +378,22 @@ export default function ActiveWorkoutPage() {
       });
 
       if (finalizeError) {
-        if (!isMissingDatabaseFunction(finalizeError, "finalize_workout")) throw finalizeError;
-
-        // Compatibility path for projects that have not applied the migration yet.
-        const { data: sessionData, error: sessionError } = await supabase.from("workout_sessions").insert({
-          ...sessionPayload,
-          user_id: session.user.id,
-          status: "completed",
-        }).select().single();
-        if (sessionError) throw sessionError;
-        createdSessionId = sessionData.id;
-
-        const { error: logsError } = await supabase.from("exercise_logs").insert(records.map((record) => ({
-          exercise_name: record.exercise_name,
-          muscle_group: record.muscle_group,
-          equipment_id: record.equipment_id,
-          set_number: record.set_number,
-          planned_reps: record.planned_reps,
-          actual_reps: record.actual_unit === "reps" ? record.actual_reps : record.actual_value,
-          weight_lbs: record.weight_lbs,
-          rest_seconds: record.rest_seconds,
-          skipped: record.skipped,
-          session_id: sessionData.id,
-          user_id: session.user.id,
-        })));
-        if (logsError) throw logsError;
+        if (isMissingDatabaseFunction(finalizeError, "finalize_workout")) throw new Error("Workout saving needs a database update. Your draft remains on this device; retry after the FitBae migrations are applied.");
+        throw finalizeError;
       }
 
       completedSave.current = true;
-      localStorage.removeItem(DRAFT_KEY);
+      try { localStorage.removeItem(DRAFT_KEY); }
+      catch { notifications.show({ title: "Workout saved online", message: "The browser couldn't clear its local draft. Don't log this workout again; check Progress for your saved session.", color: "orange" }); }
       setFinished(true);
       setFinishedElapsed(elapsedSeconds);
       setFinishOpen(false);
       setRestEndsAt(null);
       setSummaryOpen(true);
     } catch (saveError) {
-      if (createdSessionId) {
-        await supabase.from("workout_sessions").delete().eq("id", createdSessionId).eq("user_id", session.user.id);
-      }
       notifications.show({ title: "Workout not saved", message: saveError.message || "Your draft is still safe on this device.", color: "red" });
     } finally {
+      saveLock.current = false;
       setSaving(false);
     }
   };

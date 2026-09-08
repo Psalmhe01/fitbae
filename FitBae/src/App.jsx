@@ -83,7 +83,12 @@ export default function App() {
       setLoading(false);
       fetchNotifications(currentSession.user.id);
     };
-    load();
+    load().catch(() => {
+      if (mounted) {
+        setShellError("FitBae couldn't reach your account. Check your connection and try again.");
+        setLoading(false);
+      }
+    });
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!nextSession) navigate("/", { replace: true });
       setSession(nextSession);

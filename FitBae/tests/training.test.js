@@ -35,6 +35,7 @@ test("best sets and volume exclude skipped, timed and distance logs", () => {
     { exercise_name: "Squat", actual_unit: "reps", actual_reps: 10, weight_lbs: 25 },
     { exercise_name: "Squat", actual_unit: "reps", actual_reps: 6, weight_lbs: 100, skipped: true },
     { exercise_name: "Carry", actual_unit: "meters", actual_reps: 20, weight_lbs: 50 },
+    { exercise_name: "Invalid data", actual_unit: "reps", actual_reps: "invalid", weight_lbs: 50 },
   ];
   assert.equal(logs.reduce((sum, log) => sum + repVolume(log), 0), 450);
   assert.equal(personalBests([{ exercise_logs: logs }]).length, 1);

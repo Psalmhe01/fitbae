@@ -78,11 +78,11 @@ test("time zone preference changes chat display without changing message data", 
   app.connected = true;
   app.messages = [{ id: "timezone", author_id: PARTNER_ID, recipient_id: USER_ID, content: "Time check", created_at: "2026-09-08T18:30:00Z", seen: true }];
   await page.goto("/settings");
-  await page.getByRole("textbox", { name: "Display time zone", exact: true }).fill("Africa/Lagos");
+  await page.getByRole("combobox", { name: "Display time zone", exact: true }).fill("Africa/Lagos");
   await page.getByRole("option", { name: "Africa/Lagos", exact: true }).click();
   await page.getByRole("button", { name: "Save time zone", exact: true }).click();
   await expect(page.getByText("Time zone saved.", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Together", exact: true }).first().click();
+  await page.goto("/together");
   await expect(page.getByRole("log").locator("time")).toContainText("7:30");
   expect(app.messages[0].created_at).toBe("2026-09-08T18:30:00Z");
 });
@@ -122,14 +122,14 @@ test("the library finds exercises and remembers private device favorites", async
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/library");
   await page.getByLabel("Search exercises", { exact: true }).fill("Goblet Squat");
-  await page.getByRole("button", { name: "Save Goblet Squat", exact: true }).click();
+  await page.getByRole("button", { name: "Save Dumbbell Goblet Squat", exact: true }).click();
   await page.getByRole("checkbox", { name: "Only favorites", exact: true }).check();
-  await page.getByRole("button", { name: "View Goblet Squat guide", exact: true }).click();
+  await page.getByRole("button", { name: "View Dumbbell Goblet Squat guide", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.reload();
   await page.getByRole("checkbox", { name: "Only favorites", exact: true }).check();
-  await expect(page.getByRole("heading", { name: "Goblet Squat", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dumbbell Goblet Squat", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("library-mobile.png"), fullPage: true });
 });
@@ -155,4 +155,47 @@ test("dashboard keeps weekly totals from an older plan", async ({ page, app }) =
   app.history = [{ id: "old-plan-session", plan_id: "old-plan", day: "Monday", status: "completed", duration_seconds: 1800, finished_at: new Date().toISOString() }];
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "1 of 2 sessions done", exact: true })).toBeVisible();
+});
+
+test("a missing reset session offers a fresh link instead of a dead-end form", async ({ page, app }) => {
+  await signedOut(page);
+  await page.goto("/auth?mode=reset");
+  await expect(page.getByRole("alert")).toContainText("missing or has expired");
+  await expect(page.getByRole("button", { name: "Update password", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Request a new reset link", exact: true }).click();
+  await expect(page).toHaveURL(/mode=forgot/);
+  expect(app.authUpdates).toHaveLength(0);
+});
+
+test("missing workout RPC keeps the draft and a retry reuses its save identifier", async ({ page, app }) => {
+  app.workoutError = { code: "PGRST202", message: "Could not find finalize_workout" };
+  await page.goto("/plan?day=Monday");
+  await page.getByRole("button", { name: "Start this workout", exact: true }).click();
+  await page.getByRole("button", { name: "Complete set 1", exact: true }).click();
+  await page.getByRole("button", { name: "Next exercise", exact: true }).click();
+  await page.getByRole("button", { name: "Review & finish", exact: true }).click();
+  await page.getByRole("button", { name: "Save workout", exact: true }).click();
+  await expect(page.getByText(/Workout saving needs a database update/)).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("fitbae-active-workout")).completedSets)).toBe(1);
+  app.workoutError = null;
+  await page.getByRole("button", { name: "Save workout", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Work logged. Nicely done.", exact: true })).toBeVisible();
+  expect(app.workouts).toHaveLength(2);
+  expect(app.workouts[0].p_idempotency_key).toBe(app.workouts[1].p_idempotency_key);
+});
+
+test("a committed save stays successful if the browser cannot clear its draft", async ({ page, app }) => {
+  await page.goto("/plan?day=Monday");
+  await page.getByRole("button", { name: "Start this workout", exact: true }).click();
+  await page.getByRole("button", { name: "Complete set 1", exact: true }).click();
+  await page.getByRole("button", { name: "Next exercise", exact: true }).click();
+  await page.getByRole("button", { name: "Review & finish", exact: true }).click();
+  await page.evaluate(() => {
+    const remove = Storage.prototype.removeItem;
+    Storage.prototype.removeItem = function (key) { if (key === "fitbae-active-workout") throw new Error("Storage unavailable"); return remove.call(this, key); };
+  });
+  await page.getByRole("button", { name: "Save workout", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Work logged. Nicely done.", exact: true })).toBeVisible();
+  await expect(page.getByText("Workout not saved", { exact: true })).toHaveCount(0);
+  expect(app.workouts).toHaveLength(1);
 });
