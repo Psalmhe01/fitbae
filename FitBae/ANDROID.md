@@ -71,6 +71,56 @@ into `public/` or `android/app/src/main/assets/`.
 - Pick/crop/upload a profile photo from Android's file picker.
 - Check light/dark themes, keyboard, hardware Back, dialogs and screen insets.
 
+## Notifications (Android 1.1)
+
+In Profile → Preferences → Notifications, enable system notifications, choose
+training days and a local reminder time, then save notification preferences.
+Reminders are off by default. Use **Send test alert** to check delivery.
+Settings apply to the current account on this installation, not other devices.
+
+Weekly reminders use Android calendar schedules in the phone's time zone, not
+the profile display-time-zone preference. Open FitBae after a time-zone change
+to refresh them. Quiet hours prevent selecting a reminder time in that window;
+Android-delayed delivery can still arrive later. Explicitly started rest timers
+are not muted by reminder quiet hours. Sounds, vibration and lock-screen display
+can be changed in Android Settings → Apps → FitBae → Notifications.
+
+Rest alerts are scheduled on-device when a timer starts, and updated/cancelled
+when it is adjusted, ended, paused, discarded or saved. Leaving the workout
+route cancels its alert; putting the app in the background does not. Signing
+out clears this feature's pending and delivered notifications. Reminder taps
+open Plan; rest-alert taps only reopen a matching, unpaused workout draft.
+
+Notification permission and Android's **Alarms & reminders** permission are
+separate. The latter is optional and requested only by the **Allow precise rest
+alerts** button. Without it, alerts are inexact. Even with it, Doze, manufacturer
+battery restrictions, force-stop and Do Not Disturb affect delivery. Android
+limits idle alarms (roughly one per nine minutes), so this is not a guarantee
+of second-accurate background interval coaching. Keep the workout screen open
+for short intervals. Browser notifications remain best-effort; scheduled weekly
+reminders are Android-only. No Firebase or database migration is needed here.
+
+Install this APK over the previous test APK using the same debug signing key;
+do not uninstall if you want to preserve device settings and workout drafts.
+
+Real-device checks for this update:
+
+- Deny permission, then enable it; verify countdowns still work when denied.
+- Send a test alert, background the app, and tap the notification.
+- Select training days/time, reject a time inside quiet hours, save and reopen.
+- Complete a set, adjust its rest, lock/unlock, end it, pause and finish a workout.
+- Sign out before a pending alert and switch to the other test account.
+- Try precise-alarm permission both on and off, battery saver, and a reboot.
+
+Partner-message **push notifications are not included**. The next phase needs
+a Firebase project with an Android app registered as `com.fitbae.app`, its
+`google-services.json` in `android/app/`, and a trusted server-side delivery
+worker with private Firebase credentials. That phase must include per-user
+token management, authenticated delivery, logout cleanup and message privacy.
+Never put service-account private keys in Vite variables or bundled app assets.
+
+Reference: [Capacitor local notifications](https://capacitorjs.com/docs/apis/local-notifications).
+
 ## Before a public release
 
 Confirm ownership/uniqueness of the provisional package ID `com.fitbae.app`,

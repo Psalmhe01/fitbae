@@ -1,4 +1,28 @@
+import { Capacitor } from "@capacitor/core";
+import { LocalNotifications } from "@capacitor/local-notifications";
+import { createNotificationScheduler } from "./notificationScheduler.js";
+
+export const nativeNotifications = Capacitor.getPlatform() === "android";
+export const notificationScheduler = createNotificationScheduler({
+  plugin: LocalNotifications, native: nativeNotifications,
+  storage: { getItem: (key) => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) },
+});
+
+export async function notificationStatus() {
+  if (nativeNotifications) {
+    const permission = await LocalNotifications.checkPermissions();
+    const exact = await LocalNotifications.checkExactNotificationSetting();
+    return { permission: permission.display, exact: exact.exact_alarm === "granted" };
+  }
+  return { permission: typeof Notification === "undefined" ? "unsupported" : Notification.permission, exact: false };
+}
+
+export async function requestExactAlarms() {
+  if (nativeNotifications) await LocalNotifications.changeExactNotificationSetting();
+}
+
 export const requestPermission = async () => {
+  if (nativeNotifications) return (await LocalNotifications.requestPermissions()).display;
   if (!("Notification" in window)) {
     console.warn("This browser does not support notifications.");
     return "unsupported";
@@ -7,11 +31,14 @@ export const requestPermission = async () => {
   return permission;
 };
 
-export const notifyRestComplete = () => {
+export const notifyRestComplete = async (userId) => {
+  if (!notificationScheduler.read(userId).restAlerts) return;
+  // Android already owns the alarm; never duplicate it on resume.
+  if (nativeNotifications && (await LocalNotifications.checkPermissions()).display === "granted") return;
   // 1. System Notification
   try {
     if (
-      typeof window !== "undefined" &&
+      !nativeNotifications && typeof window !== "undefined" &&
       "Notification" in window &&
       Notification.permission === "granted"
     ) {
@@ -28,7 +55,7 @@ export const notifyRestComplete = () => {
     );
   }
 
-  // 2. Audio Fallback (Crucial for mobile/inactive tabs)
+  // Best-effort foreground fallback; browsers may suspend background audio.
   playNotificationSound();
 };
 

@@ -7,11 +7,11 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
-  ArrowLeft, Bell, BellOff, Check, CircleAlert, RefreshCw, Save,
+  ArrowLeft, Check, CircleAlert, RefreshCw, Save,
   ShieldCheck, SlidersHorizontal,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { requestPermission } from "@/lib/notifications";
+import { NotificationPreferences } from "@/components/NotificationPreferences";
 import { generateWorkoutPlan } from "@/lib/gemini";
 import { FITNESS_GOAL_OPTIONS, normalizeFitnessGoal } from "@/lib/fitnessConfig";
 import { equipmentCategories } from "@/lib/equipmentLibrary";
@@ -42,7 +42,6 @@ export default function SettingsPage() {
   const [form, setForm] = useState(() => profileForm(shellProfile));
   const [saving, setSaving] = useState(false);
   const [rebuildOpen, setRebuildOpen] = useState(false);
-  const [permission, setPermission] = useState(() => typeof Notification === "undefined" ? "unsupported" : Notification.permission);
 
   const baseline = useMemo(() => JSON.stringify(profileForm(shellProfile)), [shellProfile]);
   const dirty = JSON.stringify(form) !== baseline;
@@ -129,12 +128,6 @@ export default function SettingsPage() {
     }
   };
 
-  const enableNotifications = async () => {
-    const result = await requestPermission();
-    setPermission(result);
-    if (result === "denied") notifications.show({ title: "Notifications are blocked", message: "Change this site's permission in your browser settings.", color: "orange" });
-  };
-
   return (
     <Stack gap={32}>
       <Box><Button component={Link} to="/profile" variant="subtle" color="gray" px={0} leftSection={<ArrowLeft size={16} />}>Back to profile</Button><Text className="eyebrow" mt="xl">Make FitBae fit</Text><Title order={1} fz={{ base: 38, md: 50 }} lts={-2} mt={4}>Preferences</Title><Text c="dimmed" mt="xs">Change your profile alone, or use the same changes to rebuild your plan.</Text></Box>
@@ -169,9 +162,7 @@ export default function SettingsPage() {
         <Stack gap="lg">{Object.entries(equipmentCategories).map(([category, items]) => <Box key={category}><Text className="eyebrow" mb="xs">{category}</Text><Group gap={7}>{items.map((item) => <Chip key={item.id} checked={form.equipment.includes(item.id)} onChange={() => toggleEquipment(item.id)}>{item.name}</Chip>)}</Group></Box>)}</Stack>
       </SettingsSection>
 
-      <SettingsSection title="Rest timer alerts" description="A sound and optional system notification can tell you when recovery time ends.">
-        <Group justify="space-between" wrap="wrap"><Group><ThemeIcon variant="light" color={permission === "granted" ? "green" : "gray"} size={46}>{permission === "granted" ? <Bell size={20} /> : <BellOff size={20} />}</ThemeIcon><Box><Text fw={750}>{permission === "granted" ? "Notifications enabled" : permission === "unsupported" ? "Not supported by this browser" : "Browser notifications are off"}</Text><Text size="xs" c="dimmed">The in-app countdown works either way.</Text></Box></Group><Button variant="light" onClick={enableNotifications} disabled={permission === "granted" || permission === "unsupported"}>Enable</Button></Group>
-      </SettingsSection>
+      <NotificationPreferences key={session.user.id} user={session.user} />
 
       <Alert icon={<ShieldCheck size={18} />} color="brand" title="Your history stays separate">Rebuilding creates a new plan version. Completed sessions and the weights/reps you logged are never overwritten.</Alert>
 

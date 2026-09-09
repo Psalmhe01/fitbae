@@ -12,7 +12,7 @@ import {
   Plus, RefreshCw, Timer, X,
 } from "lucide-react";
 import { isMissingDatabaseFunction, supabase } from "@/lib/supabase";
-import { notifyRestComplete } from "@/lib/notifications";
+import { notifyRestComplete, notificationScheduler } from "@/lib/notifications";
 import { getEquipmentById } from "@/lib/equipmentLibrary";
 import { substitutePlanExercise } from "@/lib/workoutPlan";
 import { ExerciseGuideModal } from "@/components/ExerciseGuideModal";
@@ -199,9 +199,19 @@ export default function ActiveWorkoutPage() {
 
   const restRemaining = restEndsAt ? Math.max(0, Math.ceil((restEndsAt - now) / 1000)) : null;
   useEffect(() => {
+    if (restEndsAt > Date.now()) notificationScheduler.rest(session?.user?.id, restEndsAt).catch(() => {
+      notifications.show({ title: "Rest alert could not be scheduled", message: "The countdown still works. Check notification preferences before leaving the app.", color: "orange" });
+    });
+  }, [restEndsAt, session?.user?.id]);
+
+  useEffect(() => () => {
+    notificationScheduler.rest(session?.user?.id, null).catch(() => {});
+  }, [session?.user?.id]);
+
+  useEffect(() => {
     if (!restEndsAt || restRemaining > 0 || restAlerted.current) return;
     restAlerted.current = true;
-    notifyRestComplete();
+    notifyRestComplete(session?.user?.id).catch(() => {});
     setRestEndsAt(null);
   }, [restEndsAt, restRemaining]);
 
@@ -250,7 +260,16 @@ export default function ActiveWorkoutPage() {
   };
 
   const adjustRest = (seconds) => {
-    setRestEndsAt((current) => Math.max(Date.now(), (current || Date.now()) + seconds * 1000));
+    const next = (restEndsAt || Date.now()) + seconds * 1000;
+    if (next <= Date.now()) endRest();
+    else setRestEndsAt(next);
+  };
+
+  const endRest = () => {
+    notificationScheduler.rest(session.user.id, null).catch(() => {
+      notifications.show({ title: "Could not cancel the device alert", message: "Android may still show the previous rest alert.", color: "orange" });
+    });
+    setRestEndsAt(null);
   };
 
   const handleSwap = async (replacement) => {
@@ -388,7 +407,7 @@ export default function ActiveWorkoutPage() {
       setFinished(true);
       setFinishedElapsed(elapsedSeconds);
       setFinishOpen(false);
-      setRestEndsAt(null);
+      endRest();
       setSummaryOpen(true);
     } catch (saveError) {
       notifications.show({ title: "Workout not saved", message: saveError.message || "Your draft is still safe on this device.", color: "red" });
@@ -477,7 +496,7 @@ export default function ActiveWorkoutPage() {
           <Paper className="today-card" p="md">
             <Group justify="space-between" wrap="nowrap" style={{ position: "relative", zIndex: 1 }}>
               <Group gap="sm"><ThemeIcon color="brand" c="dark.9" radius="xl"><Timer size={18} /></ThemeIcon><Box aria-live="polite"><Text size="xs" c="gray.5" fw={800}>REST TIMER</Text><Text fw={900} fz="xl" ff="monospace">{formatTime(restRemaining)}</Text></Box></Group>
-              <Group gap={4}><ActionIcon variant="subtle" color="gray" c="white" size={40} onClick={() => adjustRest(-15)} aria-label="Remove 15 seconds"><Minus size={17} /></ActionIcon><ActionIcon variant="subtle" color="gray" c="white" size={40} onClick={() => adjustRest(15)} aria-label="Add 15 seconds"><Plus size={17} /></ActionIcon><Button variant="light" color="gray" size="xs" onClick={() => setRestEndsAt(null)}>End</Button></Group>
+              <Group gap={4}><ActionIcon variant="subtle" color="gray" c="white" size={40} onClick={() => adjustRest(-15)} aria-label="Remove 15 seconds"><Minus size={17} /></ActionIcon><ActionIcon variant="subtle" color="gray" c="white" size={40} onClick={() => adjustRest(15)} aria-label="Add 15 seconds"><Plus size={17} /></ActionIcon><Button variant="light" color="gray" size="xs" onClick={endRest}>End</Button></Group>
             </Group>
           </Paper>
         </Box>
