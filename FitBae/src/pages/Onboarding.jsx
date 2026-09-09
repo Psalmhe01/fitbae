@@ -17,6 +17,7 @@ import { equipmentCategories } from "@/lib/equipmentLibrary";
 import { equipmentLibrary } from "@/lib/equipmentLibrary";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandMark } from "@/components/BrandMark";
+import { useContentMotion } from "@/hooks/useContentMotion";
 
 const goalIcons = {
   muscle: Dumbbell,
@@ -30,6 +31,7 @@ const goalIcons = {
 export default function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
+  const stepRef = useContentMotion(step);
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState("");
   const [age, setAge] = useState("");
@@ -150,7 +152,7 @@ export default function OnboardingPage() {
         <Group justify="space-between" mb={{ base: 32, md: 48 }}><BrandMark /><ThemeToggle /></Group>
         <Box mb="lg"><Group justify="space-between" mb="xs"><Text className="eyebrow">Step {step} of 3</Text><Text size="xs" c="dimmed">{Math.round(progress)}%</Text></Group><Progress value={progress} color="brand" size="sm" /></Box>
 
-        <Paper className="surface-raised" p={{ base: "lg", sm: 40 }} pos="relative">
+        <Paper className="surface-raised" p={{ base: "lg", sm: 40 }} pos="relative" ref={stepRef}>
           <LoadingOverlay visible={loading} overlayProps={{ blur: 2, backgroundOpacity: 0.72 }} loaderProps={{ color: "brand" }} />
           {step === 1 && (
             <Stack gap={28}>

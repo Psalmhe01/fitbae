@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import {
-  Alert, Badge, Box, Button, Center, Group, Loader, Paper, Select, SimpleGrid, Stack,
+  Alert, Badge, Box, Button, Center, Group, Paper, Select, SimpleGrid, Stack,
   Text, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { ArrowUpRight, Award, CalendarDays, CheckCircle2, Clock3, Download, Dumbbell, Search, TrendingUp } from "lucide-react";
@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { formatTimestamp, timestampMs, userTimeZone } from "@/lib/dates";
 import { personalBests, sessionsCsv } from "@/lib/training";
 import { exportCsv } from "@/lib/exportFile";
+import { FitBaeLoading } from "@/components/FitBaeLoading";
 
 const formatDuration = (seconds = 0) => {
   const mins = Math.round(Number(seconds) / 60);
@@ -87,7 +88,7 @@ export default function HistoryPage() {
 
       {error && <Alert color="red">{error}<Button variant="subtle" color="red" onClick={() => setRetry((value) => value + 1)}>Retry</Button></Alert>}
       {exportError && <Alert color="red" role="alert">{exportError}</Alert>}
-      {loading ? <Center mih="45vh"><Loader color="brand" /></Center> : (
+      {loading ? <Center mih="45vh"><FitBaeLoading message="Gathering your training history…" /></Center> : (
         <>
           <Paper className="surface" p="lg"><SimpleGrid cols={{ base: 1, sm: 2 }}><TextInput label="Search loaded sessions" placeholder="Exercise, workout, or session note" value={search} onChange={(e) => setSearch(e.currentTarget.value)} leftSection={<Search size={16} />} /><Select label="Time period" allowDeselect={false} value={period} onChange={(value) => setPeriod(value || "all")} data={[{ value: "all", label: "All loaded sessions" }, { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" }, { value: "90", label: "Last 90 days" }]} /></SimpleGrid><Group justify="space-between" mt="md"><Text size="xs" c="dimmed" maw={600}>{history.length} sessions loaded. Summaries, best sets, search and export use the {filtered.length} shown sessions{hasMore ? "; load older sessions below to include more" : ""}.</Text><Button variant="light" leftSection={<Download size={16} />} onClick={exportHistory} disabled={!filtered.length}>Export shown sessions</Button></Group></Paper>
           <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">

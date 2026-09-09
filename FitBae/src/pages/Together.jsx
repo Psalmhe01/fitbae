@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
+import { FitBaeLoading } from "@/components/FitBaeLoading";
 import {
   ActionIcon, Alert, Box, Button, Center, Group,
-  Loader, Modal, Paper, Progress, SimpleGrid, Stack, Text,
+  Modal, Paper, Progress, SimpleGrid, Stack, Text,
   TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -184,7 +185,7 @@ export default function TogetherPage() {
     else notifications.show({ title: `Boost sent to ${partner?.name?.split(" ")[0] || "your partner"}`, color: "orange" });
   };
 
-  if (loading) return <Center mih="55vh"><Loader color="brand" /></Center>;
+  if (loading) return <Center mih="55vh"><FitBaeLoading message="Getting your shared space ready…" /></Center>;
   const status = relationship?.status;
 
   return (

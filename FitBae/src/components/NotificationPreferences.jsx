@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Chip, Divider, Group, Paper, SimpleGrid, Stack, Switch, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Chip, Collapse, Divider, Group, Paper, SimpleGrid, Stack, Switch, Text, TextInput, Title } from "@mantine/core";
 import { Bell, CircleAlert } from "lucide-react";
 import { nativeNotifications, notificationScheduler, notificationStatus, requestExactAlarms, requestPermission } from "@/lib/notifications";
 import { WEEKDAYS, validateNotificationPreferences } from "@/lib/notificationConfig";
@@ -59,7 +59,7 @@ export function NotificationPreferences({ user }) {
           {!status.exact && <Button variant="subtle" size="xs" w="fit-content" disabled={busy || !granted} onClick={() => run(requestExactAlarms)}>Allow precise rest alerts</Button>}
           <Divider />
           <Switch label="Workout reminders" description="A weekly reminder on your chosen training days." checked={prefs.reminders} disabled={busy} onChange={(event) => set("reminders", event.currentTarget.checked)} />
-          {prefs.reminders && <Stack gap="md">
+          <Collapse expanded={prefs.reminders} transitionDuration={180}><Stack gap="md">
             <Group gap="xs" aria-label="Reminder days">{WEEKDAYS.map(([day, label]) => <Chip key={day} disabled={busy} checked={prefs.days.includes(day)} onChange={() => set("days", prefs.days.includes(day) ? prefs.days.filter((item) => item !== day) : [...prefs.days, day])}>{label}</Chip>)}</Group>
             <TextInput type="time" label="Reminder time" value={prefs.time} disabled={busy} onChange={(event) => set("time", event.currentTarget.value)} maw={220} />
             <Text size="xs" c="dimmed">Uses your phone's local time ({Intl.DateTimeFormat().resolvedOptions().timeZone}), not your profile's display time zone. Open FitBae after travelling to refresh scheduled times. Reminders may arrive late when Android saves battery.</Text>
@@ -68,7 +68,7 @@ export function NotificationPreferences({ user }) {
               <TextInput type="time" label="Quiet hours start" value={prefs.quietStart} disabled={busy} onChange={(event) => set("quietStart", event.currentTarget.value)} />
               <TextInput type="time" label="Quiet hours end" value={prefs.quietEnd} disabled={busy} onChange={(event) => set("quietEnd", event.currentTarget.value)} />
             </SimpleGrid>}
-          </Stack>}
+          </Stack></Collapse>
         </> : <Text size="sm" c="dimmed">Scheduled workout reminders are available in the Android app. On the website, rest alerts are best effort while the workout page is open; browsers can suspend background timers and sound.</Text>}
         <Group>
           <Button loading={busy} onClick={save}>Save notification preferences</Button>

@@ -19,6 +19,7 @@ import { ExerciseGuideModal } from "@/components/ExerciseGuideModal";
 import { ExerciseSwapModal } from "@/components/ExerciseSwapModal";
 import { elapsedTrainingSeconds, restoreSessionClock } from "@/lib/training";
 import { formatTimestamp, userTimeZone } from "@/lib/dates";
+import { useContentMotion } from "@/hooks/useContentMotion";
 
 const DRAFT_KEY = "fitbae-active-workout";
 
@@ -147,6 +148,7 @@ export default function ActiveWorkoutPage() {
   const completedSave = useRef(false);
   const saveLock = useRef(false);
   const currentName = workout?.exercises?.[activeIndex]?.name;
+  const exerciseRef = useContentMotion(`${activeIndex}:${currentName}`);
 
   useEffect(() => {
     if (!currentName || !session?.user?.id) return;
@@ -433,7 +435,7 @@ export default function ActiveWorkoutPage() {
       )}
 
       {currentExercise ? (
-        <Paper className="surface-raised" p={{ base: "lg", sm: 32 }}>
+        <Paper className="surface-raised" p={{ base: "lg", sm: 32 }} ref={exerciseRef}>
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <Box style={{ minWidth: 0 }}><Text className="eyebrow">Exercise {activeIndex + 1} of {exercises.length}</Text><Title order={1} fz={{ base: 30, sm: 38 }} lts={-1} mt={5}>{currentExercise.name}</Title><Group gap="xs" mt="sm"><Badge variant="light">{currentExercise.muscle_group}</Badge>{currentExercise.tempo && <Badge variant="outline" color="gray">Tempo {currentExercise.tempo}</Badge>}</Group></Box>
             <ThemeIcon variant="light" color="brand" size={52}><Dumbbell size={23} /></ThemeIcon>
@@ -460,14 +462,14 @@ export default function ActiveWorkoutPage() {
               const log = logs[key] || {};
               const metric = exerciseMetric(currentExercise);
               return (
-                <Paper key={key} p="sm" bg={log.done ? "var(--brand-soft)" : log.skipped ? "var(--surface-muted)" : "transparent"} style={{ border: "1px solid var(--line)" }}>
+                <Paper key={key} className="workout-set" data-complete={Boolean(log.done)} p="sm" bg={log.done ? "var(--brand-soft)" : log.skipped ? "var(--surface-muted)" : "transparent"} style={{ border: "1px solid var(--line)" }}>
                   <Group wrap="nowrap">
                     <Text fw={850} w={32}>{setIndex + 1}</Text>
                     <NumberInput aria-label={`${currentExercise.name} set ${setIndex + 1} weight in pounds`} value={log.weight} min={0} max={2000} step={5} hideControls size="sm" style={{ flex: 1 }} onChange={(value) => updateSet(currentExercise, activeIndex, setIndex, { weight: value })} disabled={log.skipped} />
                     <NumberInput aria-label={`${currentExercise.name} set ${setIndex + 1} completed ${metric.label.toLowerCase()}`} value={log.reps} min={0} max={metric.kind === "reps" ? 500 : metric.kind === "distance" ? 100000 : 7200} decimalScale={metric.unit === "minutes" || metric.kind === "distance" ? 1 : 0} hideControls size="sm" style={{ flex: 1 }} onChange={(value) => updateSet(currentExercise, activeIndex, setIndex, { reps: value })} disabled={log.skipped} />
                     <Group gap={4} w={88} justify="flex-end" wrap="nowrap">
                       <Tooltip label={log.skipped ? "Restore set" : "Skip set"}><ActionIcon variant="subtle" color="gray" size={38} onClick={() => skipSet(currentExercise, activeIndex, setIndex)} aria-label={log.skipped ? `Restore set ${setIndex + 1}` : `Skip set ${setIndex + 1}`}><CircleMinus size={17} /></ActionIcon></Tooltip>
-                      <Tooltip label={log.done ? "Mark incomplete" : "Mark complete"}><ActionIcon variant={log.done ? "filled" : "light"} color={log.done ? "green" : "brand"} c={log.done ? undefined : "dark.9"} size={40} onClick={() => completeSet(currentExercise, activeIndex, setIndex)} aria-label={log.done ? `Mark set ${setIndex + 1} incomplete` : `Complete set ${setIndex + 1}`}><Check size={19} /></ActionIcon></Tooltip>
+                      <Tooltip label={log.done ? "Mark incomplete" : "Mark complete"}><ActionIcon className="set-check" variant={log.done ? "filled" : "light"} color={log.done ? "green" : "brand"} c={log.done ? undefined : "dark.9"} size={40} onClick={() => completeSet(currentExercise, activeIndex, setIndex)} aria-label={log.done ? `Mark set ${setIndex + 1} incomplete` : `Complete set ${setIndex + 1}`}><Check size={19} /></ActionIcon></Tooltip>
                     </Group>
                   </Group>
                 </Paper>
@@ -516,7 +518,7 @@ export default function ActiveWorkoutPage() {
       </Modal>
 
       <Modal opened={summaryOpen} onClose={() => navigate("/dashboard", { replace: true })} title="Session saved" withCloseButton={false}>
-        <Stack align="center" py="lg"><ThemeIcon size={74} radius="xl" color="brand" c="dark.9"><CheckCircle2 size={34} /></ThemeIcon><Box ta="center"><Title order={2}>Work logged. Nicely done.</Title><Text c="dimmed" mt="xs">Honest reps make the next plan smarter.</Text></Box><SimpleGrid cols={3} w="100%"><ReviewMetric label="Time" value={formatTime(elapsedSeconds)} /><ReviewMetric label="Sets" value={completedSets} /><ReviewMetric label="Volume" value={`${volume.toLocaleString()} lb`} /></SimpleGrid><Button fullWidth size="lg" onClick={() => navigate("/dashboard", { replace: true })} rightSection={<ArrowRight size={17} />}>Back to Today</Button></Stack>
+        <Stack align="center" py="lg"><ThemeIcon className="workout-saved-mark" size={74} radius="xl" color="brand" c="dark.9"><CheckCircle2 size={34} /></ThemeIcon><Box ta="center"><Title order={2}>Work logged. Nicely done.</Title><Text c="dimmed" mt="xs">Honest reps make the next plan smarter.</Text></Box><SimpleGrid cols={3} w="100%"><ReviewMetric label="Time" value={formatTime(elapsedSeconds)} /><ReviewMetric label="Sets" value={completedSets} /><ReviewMetric label="Volume" value={`${volume.toLocaleString()} lb`} /></SimpleGrid><Button fullWidth size="lg" onClick={() => navigate("/dashboard", { replace: true })} rightSection={<ArrowRight size={17} />}>Back to Today</Button></Stack>
       </Modal>
 
       <ExerciseGuideModal opened={guideOpen} onClose={() => setGuideOpen(false)} exercise={currentExercise} equipmentImageUrl={getEquipmentById(currentExercise?.equipment_id)?.image_url} equipmentName={getEquipmentById(currentExercise?.equipment_id)?.name} onRequestSwap={() => { setGuideOpen(false); setSwapOpen(true); }} />

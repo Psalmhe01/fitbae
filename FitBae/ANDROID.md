@@ -121,7 +121,19 @@ Never put service-account private keys in Vite variables or bundled app assets.
 
 Reference: [Capacitor local notifications](https://capacitorjs.com/docs/apis/local-notifications).
 
+## Motion (Android 1.2)
+
+Version 1.2 adds lightweight page/day/exercise transitions, set-completion
+feedback, a rest-timer entrance, staggered dashboard cards and animated reminder
+settings. Android/browser reduced-motion preferences disable decorative motion.
+Screens are not remounted for transitions; workout drafts and form state stay
+intact. Install the updated APK to receive these changes in the native app.
+
 ## Before a public release
+
+Version 1.3 replaces loading spinners with paired dumbbells doing alternating
+reps. Account and page loading include branded status text; buttons and inline
+loaders use the compact motif. Reduced-motion mode shows stationary weights.
 
 Confirm ownership/uniqueness of the provisional package ID `com.fitbae.app`,
 create and securely back up a release signing key, increment Android version

@@ -1,0 +1,58 @@
+/* Short, one-shot motion. No permanent layers or continuously moving decor. */
+:root { --motion-ease: cubic-bezier(0.22, 1, 0.36, 1); }
+
+@keyframes fitbae-rise {
+  from { opacity: .6; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fitbae-confirm {
+  0% { transform: scale(.8); }
+  60% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+@keyframes fitbae-check {
+  from { stroke-dashoffset: 30; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes fitbae-dock {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mantine-Button-root, .mantine-ActionIcon-root, .avatar-option {
+    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, scale 140ms var(--motion-ease);
+  }
+  .mantine-Button-root:not(:disabled):not([data-disabled]):not([data-loading]):active,
+  .mantine-ActionIcon-root:not(:disabled):not([data-disabled]):active,
+  .avatar-option:not(:disabled):active { scale: .97; }
+  .motion-cards > * { animation: fitbae-rise 320ms var(--motion-ease) backwards; }
+  .motion-cards > :nth-child(2) { animation-delay: 45ms; }
+  .motion-cards > :nth-child(3) { animation-delay: 90ms; }
+  .motion-cards > :nth-child(4) { animation-delay: 135ms; }
+  .workout-set { transition: background-color 180ms ease, border-color 180ms ease; }
+  .workout-set[data-complete="true"] .set-check svg { animation: fitbae-confirm 280ms var(--motion-ease); }
+  .workout-set[data-complete="true"] .set-check path { stroke-dasharray: 30; animation: fitbae-check 240ms ease-out; }
+  /* Animate inside the dock, preserving its translateX centering. */
+  .workout-dock > .today-card { animation: fitbae-dock 240ms var(--motion-ease); }
+  .workout-saved-mark { animation: fitbae-confirm 420ms var(--motion-ease); }
+  .avatar-option-check { animation: fitbae-confirm 220ms var(--motion-ease); }
+  .mobile-nav-link[data-active="true"] svg { animation: fitbae-confirm 260ms var(--motion-ease); }
+  .mantine-Progress-section { transition: width 300ms var(--motion-ease); }
+}
+
+.mobile-nav-link { position: relative; transition: color 160ms ease; }
+.mobile-nav-link > * { position: relative; }
+.mobile-nav-link::before {
+  content: ""; position: absolute; top: 6px; left: calc(50% - 22px);
+  width: 44px; height: 30px; border-radius: 12px;
+  background: var(--brand-soft); opacity: 0;
+  transition: opacity 160ms ease; pointer-events: none;
+}
+.mobile-nav-link[data-active="true"]::before { opacity: 1; }
+@media (hover: none) {
+  .nav-link:hover, .day-pill:hover { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-link:hover, .day-pill:hover { transform: none; }
+}

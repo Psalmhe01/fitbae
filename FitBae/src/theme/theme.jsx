@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { MantineProvider, createTheme } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core";
+import { PairedWeights } from "@/components/FitBaeLoading";
 
 const ThemeContext = createContext({ colorScheme: "light", toggleColorScheme: () => {} });
 
@@ -36,6 +37,7 @@ export function ThemeProvider({ children }) {
     primaryColor: "brand",
     primaryShade: 6,
     autoContrast: true,
+    respectReducedMotion: true,
     luminanceThreshold: 0.32,
     colors: { brand },
     defaultRadius: "md",
@@ -45,6 +47,7 @@ export function ThemeProvider({ children }) {
       fontWeight: "760",
     },
     components: {
+      Loader: { defaultProps: { children: <PairedWeights /> } },
       Button: {
         defaultProps: { radius: "md" },
         styles: { root: { fontWeight: 720, letterSpacing: "-0.01em" } },
@@ -70,7 +73,7 @@ export function ThemeProvider({ children }) {
         },
       },
       Modal: {
-        defaultProps: { radius: "lg", centered: true },
+        defaultProps: { radius: "lg", centered: true, transitionProps: { transition: "fade-up", duration: 180, timingFunction: "cubic-bezier(0.22, 1, 0.36, 1)" } },
         styles: { content: { background: "var(--surface-raised)" }, header: { background: "var(--surface-raised)" } },
       },
       Drawer: {

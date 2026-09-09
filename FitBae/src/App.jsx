@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   ActionIcon, Alert, Box, Button, Center, Container, Divider,
-  Group, Indicator, Loader, Menu, Popover, ScrollArea, Stack, Text,
+  Group, Indicator, Menu, Popover, ScrollArea, Stack, Text,
   UnstyledButton, rem,
 } from "@mantine/core";
 import {
@@ -12,9 +12,11 @@ import {
 import { supabase } from "@/lib/supabase";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandMark } from "@/components/BrandMark";
+import { FitBaeLoading } from "@/components/FitBaeLoading";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { PageErrorBoundary } from "@/components/PageErrorBoundary";
 import { formatTimestamp, timestampMs, userTimeZone } from "@/lib/dates";
+import { useContentMotion } from "@/hooks/useContentMotion";
 
 const nav = [
   { to: "/dashboard", label: "Today", icon: LayoutDashboard },
@@ -34,6 +36,8 @@ export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const isWorkout = location.pathname === "/workout";
+  // Opacity only: this region contains sticky headers and a fixed timer.
+  const contentRef = useContentMotion(`${loading}:${location.pathname}`, "fade");
 
   const fetchNotifications = useCallback(async (userId) => {
     const [reactionsRes, notesRes] = await Promise.all([
@@ -133,7 +137,7 @@ export default function App() {
   const isActive = (to) => location.pathname === to || (to === "/history" && location.pathname.startsWith("/history/"));
 
   if (loading) {
-    return <Center mih="100svh" className="app-shell"><Loader color="brand" size="lg" /></Center>;
+    return <FitBaeLoading fullScreen />;
   }
 
   if (shellError) {
@@ -225,6 +229,7 @@ export default function App() {
 
         <Container
           id="main-content"
+          ref={contentRef}
           component="main"
           size={isWorkout ? "sm" : "xl"}
           py={{ base: "lg", md: 36 }}

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import {
-  Alert, Badge, Box, Button, Center, Divider, Group, Loader, Paper,
+  Alert, Badge, Box, Button, Center, Divider, Group, Paper,
   SimpleGrid, Stack, Text, ThemeIcon, Title,
 } from "@mantine/core";
 import { ArrowLeft, CalendarDays, Check, Clock3, Dumbbell, RotateCcw, Weight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { FitBaeLoading } from "@/components/FitBaeLoading";
 import { formatTimestamp, userTimeZone } from "@/lib/dates";
 
 export default function SessionDetailPage() {
@@ -46,7 +47,7 @@ export default function SessionDetailPage() {
   }, 0);
   const minutes = Math.round((Number(workoutSession?.duration_seconds) || 0) / 60);
 
-  if (loading) return <Center mih="55vh"><Loader color="brand" /></Center>;
+  if (loading) return <Center mih="55vh"><FitBaeLoading message="Opening your workout recap…" /></Center>;
   if (error) return <Alert color="red">{error}</Alert>;
   if (!workoutSession) return <Alert color="orange" title="Session not found">It may have been removed, or it doesn't belong to this account.<Button variant="subtle" color="orange" mt="sm" onClick={() => navigate("/history")}>Back to progress</Button></Alert>;
 

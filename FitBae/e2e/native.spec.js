@@ -79,6 +79,8 @@ test("native reminders are opt-in, validate quiet hours and schedule in phone lo
   expect(await page.evaluate(() => window.nativeCalls.some((call) => call.method === "changeExactNotificationSetting"))).toBe(false);
   await page.evaluate((userId) => window.emitNative("localNotificationActionPerformed", { notification: { id: 41002, extra: { kind: "workout-reminder", userId } } }), USER_ID);
   await expect(page).toHaveURL(/\/plan$/);
+  // A notification changes the URL before the lazy destination finishes loading.
+  await expect(page.getByRole("heading", { name: "Your plan", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Open account menu", exact: true }).first().click();
   await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.nativePendingNotifications.length)).toBe(0);

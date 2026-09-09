@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import {
-  Alert, Badge, Box, Button, Center, Group, Loader, Modal, Paper,
+  Alert, Badge, Box, Button, Center, Group, Modal, Paper,
   SimpleGrid, Stack, Text, ThemeIcon, Title, UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -17,6 +17,8 @@ import {
 } from "@/lib/workoutPlan";
 import { ExerciseGuideModal } from "@/components/ExerciseGuideModal";
 import { ExerciseSwapModal } from "@/components/ExerciseSwapModal";
+import { useContentMotion } from "@/hooks/useContentMotion";
+import { FitBaeLoading } from "@/components/FitBaeLoading";
 
 const ACTIVE_DRAFT_KEY = "fitbae-active-workout";
 
@@ -83,6 +85,7 @@ export default function PlanPage() {
   const selectedDayName = searchParams.get("day") || location.state?.day
     || new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(new Date());
   const selectedDay = schedule.find((day) => day.day === selectedDayName) || schedule[0];
+  const dayRef = useContentMotion(selectedDay?.day);
 
   const persistPlan = async (nextPlan, successMessage) => {
     if (!planRecord?.id || savingSwap) return false;
@@ -148,7 +151,7 @@ export default function PlanPage() {
 
   const activeCount = useMemo(() => schedule.filter((day) => !day.rest).length, [schedule]);
 
-  if (loading) return <Center mih="55vh"><Loader color="brand" /></Center>;
+  if (loading) return <Center mih="55vh"><FitBaeLoading message="Getting your training week ready…" /></Center>;
   if (error) return <Alert color="red" title="Your plan couldn't open" icon={<CircleAlert size={18} />}><Text size="sm">{error}</Text><Group mt="md"><Button variant="light" color="red" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</Button><Button variant="subtle" color="gray" onClick={() => navigate("/dashboard")}>Back to Today</Button></Group></Alert>;
   if (!planRecord || !schedule.length) {
     return <Paper className="surface-raised" p={{ base: "xl", md: 48 }}><ThemeIcon color="brand" variant="light" size={54}><CalendarDays size={25} /></ThemeIcon><Title order={2} mt="xl">No active plan yet</Title><Text c="dimmed" mt="sm">Return to Today to build a fresh plan from your saved preferences.</Text><Button mt="xl" onClick={() => navigate("/dashboard")}>Go to Today</Button></Paper>;
@@ -192,7 +195,7 @@ export default function PlanPage() {
       </SimpleGrid>
 
       {selectedDay && (
-        <Box className="plan-layout">
+        <Box className="plan-layout" ref={dayRef}>
           <Box className="plan-main">
             <Paper className="surface-raised" p={{ base: "lg", md: 32 }}>
               <Group justify="space-between" align="flex-start">

@@ -1,11 +1,13 @@
 import { StrictMode, Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { Center, Loader } from "@mantine/core";
+import { FitBaeLoading } from "./components/FitBaeLoading.jsx";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import "./index.css";
 import "./theme/style.css";
+import "./theme/motion.css";
+import "./theme/loading.css";
 import { ThemeProvider } from "./theme/theme.jsx";
 import { PageErrorBoundary } from "./components/PageErrorBoundary.jsx";
 import { NativeBridge } from "./components/NativeBridge.jsx";
@@ -29,7 +31,7 @@ const ActiveWorkoutPage = lazy(() => import("./pages/ActiveWorkout.jsx"));
 const LibraryPage = lazy(() => import("./pages/Library.jsx"));
 
 function RouteFallback() {
-  return <Center mih="100svh" className="app-shell"><Loader color="brand" /></Center>;
+  return <FitBaeLoading fullScreen />;
 }
 
 createRoot(document.getElementById("root")).render(

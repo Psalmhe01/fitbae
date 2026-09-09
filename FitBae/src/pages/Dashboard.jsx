@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import {
-  Alert, Badge, Box, Button, Center, Group, Loader, Modal, Paper,
+  Alert, Badge, Box, Button, Center, Group, Modal, Paper,
   Progress, SimpleGrid, Stack, Text, ThemeIcon, Title, UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -12,6 +12,7 @@ import {
 import { isMissingDatabaseFunction, supabase } from "@/lib/supabase";
 import { generateWorkoutPlan } from "@/lib/gemini";
 import { normalizeAndValidateWorkoutPlan } from "@/lib/workoutPlan";
+import { FitBaeLoading } from "@/components/FitBaeLoading";
 
 const ACTIVE_DRAFT_KEY = "fitbae-active-workout";
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -193,7 +194,7 @@ export default function Dashboard() {
     else notifications.show({ title: `Sent to ${partner.name?.split(" ")[0] || "your partner"}`, message: "A little encouragement goes a long way.", color: "orange" });
   };
 
-  if (loading) return <Center mih="55vh"><Loader color="brand" /></Center>;
+  if (loading) return <Center mih="55vh"><FitBaeLoading message="Finding your next session…" /></Center>;
 
   if (error) {
     return (
@@ -232,7 +233,7 @@ export default function Dashboard() {
         </Alert>
       )}
 
-      <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="lg">
+      <SimpleGrid className="motion-cards" cols={{ base: 1, lg: 3 }} spacing="lg">
         <Paper className="today-card dashboard-primary" p={{ base: "xl", md: 32 }}>
           <Stack gap="lg" style={{ position: "relative", zIndex: 1 }}>
             <Group justify="space-between">
@@ -302,7 +303,7 @@ export default function Dashboard() {
         </Paper>
       </Box>
 
-      <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
+      <SimpleGrid className="motion-cards" cols={{ base: 2, md: 4 }} spacing="md">
         <Metric icon={Flame} label="This week" value={`${weekSessions.length}`} suffix="sessions" />
         <Metric icon={Clock3} label="Time trained" value={`${Math.round(minutesThisWeek)}`} suffix="minutes" />
         <Metric icon={CalendarDays} label="Plan rhythm" value={`${activeDays.length}×`} suffix="per week" />
