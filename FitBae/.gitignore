@@ -13,6 +13,11 @@ dist-ssr
 playwright-report/
 test-results/
 *.local
+!.env.mobile
+*.apk
+*.aab
+*.jks
+*.keystore
 
 # Editor directories and files
 .vscode/*

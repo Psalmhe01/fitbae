@@ -1,0 +1,9 @@
+{
+  "appId": "com.fitbae.app",
+  "appName": "FitBae",
+  "webDir": "dist",
+  "backgroundColor": "#172006",
+  "loggingBehavior": "debug",
+  "server": { "androidScheme": "https" },
+  "plugins": { "SystemBars": { "insetsHandling": "css" } }
+}

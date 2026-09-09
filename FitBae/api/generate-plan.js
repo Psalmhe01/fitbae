@@ -176,6 +176,14 @@ async function generateWithGemini(context, apiKey) {
 }
 
 export default async function handler(req, res) {
+  // Capacitor serves bundled assets at this origin. Bearer auth remains required;
+  // no wildcard origins or cookies are enabled for cross-origin callers.
+  res.setHeader("Vary", "Origin");
+  if (req.headers.origin === "https://localhost") {
+    res.setHeader("Access-Control-Allow-Origin", "https://localhost");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  }
   if (req.method === "OPTIONS") {
     res.setHeader("Allow", "POST, OPTIONS");
     res.setHeader("Cache-Control", "no-store, max-age=0");

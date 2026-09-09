@@ -8,6 +8,10 @@ import "./index.css";
 import "./theme/style.css";
 import { ThemeProvider } from "./theme/theme.jsx";
 import { PageErrorBoundary } from "./components/PageErrorBoundary.jsx";
+import { NativeBridge } from "./components/NativeBridge.jsx";
+import { Capacitor } from "@capacitor/core";
+
+if (Capacitor.isNativePlatform()) document.documentElement.classList.add("native-app");
 
 const App = lazy(() => import("./App.jsx"));
 const LandingPage = lazy(() => import("./pages/LandingPage.jsx"));
@@ -30,6 +34,7 @@ function RouteFallback() {
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <BrowserRouter>
+      <NativeBridge />
       <ThemeProvider>
         <PageErrorBoundary>
         <Suspense fallback={<RouteFallback />}>

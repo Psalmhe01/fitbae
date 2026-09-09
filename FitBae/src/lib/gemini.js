@@ -1,4 +1,6 @@
 import { supabase } from "./supabase.js";
+import { Capacitor } from "@capacitor/core";
+import { generationEndpoint } from "./mobileConfig.js";
 import {
   WorkoutPlanValidationError,
   buildWorkoutPlanPrompt,
@@ -7,7 +9,6 @@ import {
   toSafeGenerationProfile,
 } from "./fitnessConfig.js";
 
-const GENERATION_ENDPOINT = "/api/generate-plan";
 const GEMINI_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 const SERVER_TIMEOUT_MS = 58_000;
@@ -88,7 +89,7 @@ async function requestServerPlan(safeProfile, context) {
   const timeout = timeoutController(SERVER_TIMEOUT_MS);
 
   try {
-    const response = await fetch(GENERATION_ENDPOINT, {
+    const response = await fetch(generationEndpoint(Capacitor.isNativePlatform(), import.meta.env.VITE_API_BASE_URL), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

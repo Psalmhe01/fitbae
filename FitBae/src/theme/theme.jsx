@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { MantineProvider, createTheme } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
+import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core";
 
 const ThemeContext = createContext({ colorScheme: "light", toggleColorScheme: () => {} });
 
@@ -21,6 +22,9 @@ export function ThemeProvider({ children }) {
     document.documentElement.dataset.theme = colorScheme;
     document.documentElement.style.colorScheme = colorScheme;
     localStorage.setItem("fitbae-color-scheme", colorScheme);
+    if (Capacitor.isNativePlatform()) {
+      SystemBars.setStyle({ style: colorScheme === "dark" ? SystemBarsStyle.Dark : SystemBarsStyle.Light }).catch(() => {});
+    }
   }, [colorScheme]);
 
   const value = useMemo(() => ({

@@ -8,6 +8,7 @@ import { ArrowUpRight, Award, CalendarDays, CheckCircle2, Clock3, Download, Dumb
 import { supabase } from "@/lib/supabase";
 import { formatTimestamp, timestampMs, userTimeZone } from "@/lib/dates";
 import { personalBests, sessionsCsv } from "@/lib/training";
+import { exportCsv } from "@/lib/exportFile";
 
 const formatDuration = (seconds = 0) => {
   const mins = Math.round(Number(seconds) / 60);
@@ -24,6 +25,8 @@ export default function HistoryPage() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const zone = userTimeZone(session.user);
   const formatDate = (value) => formatTimestamp(value, { weekday: "short", year: "numeric", hour: undefined, minute: undefined }, zone);
   const query = useCallback(() => supabase.from("workout_sessions")
@@ -63,10 +66,13 @@ export default function HistoryPage() {
       (!term || [item.workout_type, item.focus, item.notes, ...(item.exercise_logs || []).map((log) => log.exercise_name)].some((value) => String(value || "").toLowerCase().includes(term))));
   }, [history, period, search]);
   const bests = useMemo(() => personalBests(filtered).slice(0, 6), [filtered]);
-  const exportHistory = () => {
-    const url = URL.createObjectURL(new Blob(["\uFEFF", sessionsCsv(filtered)], { type: "text/csv;charset=utf-8" }));
-    const anchor = document.createElement("a"); anchor.href = url; anchor.download = `fitbae-workouts-${new Date().toISOString().slice(0, 10)}.csv`;
-    anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const exportHistory = async () => {
+    if (exporting) return;
+    setExporting(true); setExportError("");
+    try {
+      await exportCsv(sessionsCsv(filtered), `fitbae-workouts-${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch { setExportError("Your export couldn't be opened. Please try again."); }
+    finally { setExporting(false); }
   };
 
   const summary = useMemo(() => ({
@@ -80,6 +86,7 @@ export default function HistoryPage() {
       <Box><Text className="eyebrow">The work adds up</Text><Title order={1} fz={{ base: 38, md: 50 }} lts={-2} mt={4}>Progress</Title><Text c="dimmed" mt="xs">Every completed session, with the numbers you actually logged.</Text></Box>
 
       {error && <Alert color="red">{error}<Button variant="subtle" color="red" onClick={() => setRetry((value) => value + 1)}>Retry</Button></Alert>}
+      {exportError && <Alert color="red" role="alert">{exportError}</Alert>}
       {loading ? <Center mih="45vh"><Loader color="brand" /></Center> : (
         <>
           <Paper className="surface" p="lg"><SimpleGrid cols={{ base: 1, sm: 2 }}><TextInput label="Search loaded sessions" placeholder="Exercise, workout, or session note" value={search} onChange={(e) => setSearch(e.currentTarget.value)} leftSection={<Search size={16} />} /><Select label="Time period" allowDeselect={false} value={period} onChange={(value) => setPeriod(value || "all")} data={[{ value: "all", label: "All loaded sessions" }, { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" }, { value: "90", label: "Last 90 days" }]} /></SimpleGrid><Group justify="space-between" mt="md"><Text size="xs" c="dimmed" maw={600}>{history.length} sessions loaded. Summaries, best sets, search and export use the {filtered.length} shown sessions{hasMore ? "; load older sessions below to include more" : ""}.</Text><Button variant="light" leftSection={<Download size={16} />} onClick={exportHistory} disabled={!filtered.length}>Export shown sessions</Button></Group></Paper>

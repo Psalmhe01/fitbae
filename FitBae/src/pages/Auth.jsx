@@ -5,6 +5,9 @@ import { ArrowLeft, ArrowRight, Mail } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { BrandMark } from "@/components/BrandMark";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
+import { authRedirectUrl } from "@/lib/mobileConfig";
 
 export default function AuthPage() {
   const [params, setParams] = useSearchParams();
@@ -15,7 +18,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(params.has("nativeError") ? "This sign-in link could not be completed. Please try again from this device." : "");
   const [message, setMessage] = useState("");
   const [resetReady, setResetReady] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -42,6 +45,10 @@ export default function AuthPage() {
     setParams({ mode: next }, { replace: true });
   };
 
+  useEffect(() => {
+    if (params.has("nativeError")) setError("This sign-in link could not be completed. Please try again from this device.");
+  }, [params]);
+
   const submit = async (event) => {
     event.preventDefault();
     if (lock.current) return;
@@ -53,7 +60,7 @@ export default function AuthPage() {
     try {
       const address = email.trim().toLowerCase();
       if (mode === "forgot") {
-        const { error: authError } = await supabase.auth.resetPasswordForEmail(address, { redirectTo: `${window.location.origin}/auth?mode=reset` });
+        const { error: authError } = await supabase.auth.resetPasswordForEmail(address, { redirectTo: authRedirectUrl(Capacitor.isNativePlatform(), window.location.origin, true) });
         if (authError) throw authError;
         setMessage("If this email has an account, you'll receive a password-reset link. Check your inbox and spam folder.");
       } else if (mode === "reset") {
@@ -65,7 +72,7 @@ export default function AuthPage() {
       } else if (mode === "signup") {
         const { data, error: authError } = await supabase.auth.signUp({
           email: address, password,
-          options: { data: { name: name.trim() }, emailRedirectTo: `${window.location.origin}/dashboard` },
+          options: { data: { name: name.trim() }, emailRedirectTo: authRedirectUrl(Capacitor.isNativePlatform(), window.location.origin) },
         });
         if (authError) throw authError;
         setPassword(""); setConfirmation("");
@@ -85,8 +92,12 @@ export default function AuthPage() {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError("");
     try {
-      const { error: authError } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/dashboard` } });
+      const native = Capacitor.isNativePlatform();
+      const { data, error: authError } = await supabase.auth.signInWithOAuth({ provider: "google", options: {
+        redirectTo: authRedirectUrl(native, window.location.origin), skipBrowserRedirect: native,
+      } });
       if (authError) throw authError;
+      if (native && data.url) await Browser.open({ url: data.url });
     } catch (authError) { setError(authError.message || "Google sign-in is unavailable."); }
     finally { lock.current = false; setBusy(false); }
   };
