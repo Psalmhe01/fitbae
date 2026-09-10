@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { parseEnv } from "node:util";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,19 @@ if (process.platform === "win32") {
   const studioJava = join(env.ProgramFiles || "C:\\Program Files", "Android", "Android Studio", "jbr");
   const androidSdk = env.LOCALAPPDATA && join(env.LOCALAPPDATA, "Android", "Sdk");
   if (!env.JAVA_HOME && existsSync(studioJava)) env.JAVA_HOME = studioJava;
-  if (!env.FITBAE_JAVA21_HOME && existsSync(join(studioJava, "bin", "javac.exe"))) env.FITBAE_JAVA21_HOME = studioJava;
+  if (!env.FITBAE_JAVA21_HOME) {
+    const adoptium = join(env.ProgramFiles || "C:\\Program Files", "Eclipse Adoptium");
+    const candidates = [
+      ...(existsSync(adoptium) ? readdirSync(adoptium).filter((name) => name.startsWith("jdk-21")).sort().reverse().map((name) => join(adoptium, name)) : []),
+      studioJava,
+    ];
+    env.FITBAE_JAVA21_HOME = candidates.find((candidate) => {
+      const compiler = join(candidate, "bin", "javac.exe");
+      if (!existsSync(compiler)) return false;
+      const check = spawnSync(compiler, ["-version"], { encoding: "utf8", windowsHide: true });
+      return check.status === 0 && /javac 21\./.test(`${check.stdout || ""}${check.stderr || ""}`);
+    }) || "";
+  }
   if (!env.ANDROID_HOME && androidSdk && existsSync(androidSdk)) env.ANDROID_HOME = androidSdk;
 }
 if (!env.ANDROID_HOME && env.ANDROID_SDK_ROOT) env.ANDROID_HOME = env.ANDROID_SDK_ROOT;
