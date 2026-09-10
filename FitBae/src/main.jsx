@@ -26,6 +26,7 @@ const TogetherPage = lazy(() => import("./pages/Together.jsx"));
 const HistoryPage = lazy(() => import("./pages/History.jsx"));
 const ProfilePage = lazy(() => import("./pages/Profile.jsx"));
 const SettingsPage = lazy(() => import("./pages/Settings.jsx"));
+const PreferencesPage = lazy(() => import("./pages/Preferences.jsx"));
 const SessionDetailPage = lazy(() => import("./pages/SessionDetail.jsx"));
 const ActiveWorkoutPage = lazy(() => import("./pages/ActiveWorkout.jsx"));
 const LibraryPage = lazy(() => import("./pages/Library.jsx"));
@@ -54,7 +55,8 @@ createRoot(document.getElementById("root")).render(
               <Route path="history" element={<HistoryPage />} />
               <Route path="history/:sessionId" element={<SessionDetailPage />} />
               <Route path="profile" element={<ProfilePage />} />
-              <Route path="settings" element={<SettingsPage />} />
+              <Route path="settings" element={<PreferencesPage />} />
+              <Route path="settings/workout" element={<SettingsPage />} />
               <Route path="workout" element={<ActiveWorkoutPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

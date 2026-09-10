@@ -3,6 +3,7 @@ import { MantineProvider, createTheme } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { PairedWeights } from "@/components/FitBaeLoading";
+import { palettes, paletteTokens, readPreference, writePreference } from "./palettes";
 
 const ThemeContext = createContext({ colorScheme: "light", toggleColorScheme: () => {} });
 
@@ -12,9 +13,13 @@ const brand = [
 ];
 
 export function ThemeProvider({ children }) {
+  const [palette, setPalette] = useState(() => {
+    const stored = readPreference('fitbae-palette', 'green');
+    return Object.hasOwn(palettes, stored) ? stored : 'green';
+  });
   const [colorScheme, setColorScheme] = useState(() => {
     if (typeof window === "undefined") return "light";
-    const stored = localStorage.getItem("fitbae-color-scheme");
+    const stored = readPreference("fitbae-color-scheme", "");
     if (stored === "light" || stored === "dark") return stored;
     return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
@@ -22,24 +27,34 @@ export function ThemeProvider({ children }) {
   useEffect(() => {
     document.documentElement.dataset.theme = colorScheme;
     document.documentElement.style.colorScheme = colorScheme;
-    localStorage.setItem("fitbae-color-scheme", colorScheme);
+    writePreference("fitbae-color-scheme", colorScheme);
     if (Capacitor.isNativePlatform()) {
       SystemBars.setStyle({ style: colorScheme === "dark" ? SystemBarsStyle.Dark : SystemBarsStyle.Light }).catch(() => {});
     }
   }, [colorScheme]);
 
+  useEffect(() => {
+    document.documentElement.dataset.palette = palette;
+    writePreference('fitbae-palette', palette);
+    for (const [key, value] of Object.entries(paletteTokens(palette, colorScheme))) {
+      if (palette === 'green') document.documentElement.style.removeProperty(key);
+      else document.documentElement.style.setProperty(key, value);
+    }
+  }, [palette, colorScheme]);
+
   const value = useMemo(() => ({
     colorScheme,
+    palette, setPalette, setColorScheme,
     toggleColorScheme: () => setColorScheme((current) => current === "dark" ? "light" : "dark"),
-  }), [colorScheme]);
+  }), [colorScheme, palette]);
 
   const theme = useMemo(() => createTheme({
     primaryColor: "brand",
-    primaryShade: 6,
+    primaryShade: palette === 'green' ? 6 : { light: 8, dark: 4 },
     autoContrast: true,
     respectReducedMotion: true,
     luminanceThreshold: 0.32,
-    colors: { brand },
+    colors: { brand: palette === 'green' ? brand : [97, 93, 88, 83, 78, 74, 70, 49, 36, 25].map((l) => `hsl(${palettes[palette].hue}, ${palettes[palette].saturation}%, ${l}%)`) },
     defaultRadius: "md",
     fontFamily: '"Aptos", "Segoe UI Variable", "Segoe UI", Helvetica, Arial, sans-serif',
     headings: {
@@ -80,7 +95,7 @@ export function ThemeProvider({ children }) {
         styles: { content: { background: "var(--surface-raised)" }, header: { background: "var(--surface-raised)" } },
       },
     },
-  }), []);
+  }), [palette]);
 
   return (
     <ThemeContext.Provider value={value}>

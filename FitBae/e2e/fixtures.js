@@ -47,7 +47,7 @@ export const test = base.extend({
     await page.addInitScript((initialSession) => {
       const key = "sb-fitbae-e2e-auth-token";
       if (!localStorage.getItem(key) && !localStorage.getItem("fitbae-test-signed-out")) localStorage.setItem(key, JSON.stringify(initialSession));
-      localStorage.setItem("fitbae-color-scheme", "light");
+      if (!localStorage.getItem("fitbae-color-scheme")) localStorage.setItem("fitbae-color-scheme", "light");
     }, session);
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));

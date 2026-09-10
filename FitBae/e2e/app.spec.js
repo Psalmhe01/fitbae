@@ -162,7 +162,7 @@ test("replacing an uploaded photo with initials removes only the previous owned 
 
 test("mobile Preferences saves cleanly and keeps controls above navigation", async ({ page, app }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/settings");
+  await page.goto("/settings/workout");
   await page.getByRole("textbox", { name: "Name", exact: true }).fill("  Alex  ");
   const save = page.getByRole("button", { name: "Save profile", exact: true });
   await save.click();
@@ -174,6 +174,7 @@ test("mobile Preferences saves cleanly and keeps controls above navigation", asy
   expect(saveRect.y + saveRect.height).toBeLessThan(navRect.y);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole("button", { name: "Use dark theme", exact: true }).click();
+  await page.getByRole("link", { name: "Back to preferences", exact: true }).click();
   await page.getByRole("button", { name: "Change picture", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCSS("opacity", "1");
   await expect(page.getByRole("dialog")).toHaveCSS("background-color", "rgb(30, 35, 28)");

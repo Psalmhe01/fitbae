@@ -11,13 +11,10 @@ import {
   ShieldCheck, SlidersHorizontal,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { NotificationPreferences } from "@/components/NotificationPreferences";
 import { generateWorkoutPlan } from "@/lib/gemini";
 import { FITNESS_GOAL_OPTIONS, normalizeFitnessGoal } from "@/lib/fitnessConfig";
 import { equipmentCategories } from "@/lib/equipmentLibrary";
 import { equipmentLibrary } from "@/lib/equipmentLibrary";
-import { AvatarEditor } from "@/components/AvatarEditor";
-import { DisplayPreferences } from "@/components/DisplayPreferences";
 
 const editableFields = [
   "name", "age", "weight", "height_cm", "sex", "fitness_goal",
@@ -37,7 +34,7 @@ function profileForm(profile) {
 }
 
 export default function SettingsPage() {
-  const { profile: shellProfile, session, setProfile: setShellProfile, setSession } = useOutletContext();
+  const { profile: shellProfile, session, setProfile: setShellProfile } = useOutletContext();
   const navigate = useNavigate();
   const [form, setForm] = useState(() => profileForm(shellProfile));
   const [saving, setSaving] = useState(false);
@@ -130,12 +127,10 @@ export default function SettingsPage() {
 
   return (
     <Stack gap={32}>
-      <Box><Button component={Link} to="/profile" variant="subtle" color="gray" px={0} leftSection={<ArrowLeft size={16} />}>Back to profile</Button><Text className="eyebrow" mt="xl">Make FitBae fit</Text><Title order={1} fz={{ base: 38, md: 50 }} lts={-2} mt={4}>Preferences</Title><Text c="dimmed" mt="xs">Change your profile alone, or use the same changes to rebuild your plan.</Text></Box>
+      <Box><Button component={Link} to="/settings" variant="subtle" color="gray" px={0} leftSection={<ArrowLeft size={16} />}>Back to preferences</Button><Text className="eyebrow" mt="xl">Make FitBae fit</Text><Title order={1} fz={{ base: 38, md: 50 }} lts={-2} mt={4}>Workout settings</Title><Text c="dimmed" mt="xs">Save your training preferences alone, or use the changes to rebuild your plan.</Text></Box>
 
       {dirty && <Alert color="orange" icon={<CircleAlert size={17} />} title="Unsaved changes">Choose “Save profile” to leave this week's plan alone, or “Save & rebuild” to make a new one.</Alert>}
 
-      <AvatarEditor user={session.user} name={shellProfile.name} onUserChange={(user) => setSession((current) => ({ ...current, user }))} />
-      <DisplayPreferences user={session.user} onUserChange={(user) => setSession((current) => ({ ...current, user }))} />
 
       <SettingsSection title="Personal details" description="Used for your profile and sensible input checks. Exact measurements are not sent to the plan generator.">
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
@@ -162,7 +157,6 @@ export default function SettingsPage() {
         <Stack gap="lg">{Object.entries(equipmentCategories).map(([category, items]) => <Box key={category}><Text className="eyebrow" mb="xs">{category}</Text><Group gap={7}>{items.map((item) => <Chip key={item.id} checked={form.equipment.includes(item.id)} onChange={() => toggleEquipment(item.id)}>{item.name}</Chip>)}</Group></Box>)}</Stack>
       </SettingsSection>
 
-      <NotificationPreferences key={session.user.id} user={session.user} />
 
       <Alert icon={<ShieldCheck size={18} />} color="brand" title="Your history stays separate">Rebuilding creates a new plan version. Completed sessions and the weights/reps you logged are never overwritten.</Alert>
 

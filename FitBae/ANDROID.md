@@ -1,5 +1,16 @@
 # FitBae for Android
 
+## Appearance update (1.4)
+
+Preferences now separates color themes from light/dark brightness and links to
+the dedicated workout settings page. Theme choices are local to each device.
+Five launcher icon colors are available in the updated Android APK; browser
+and older APK users see an explanation instead of an unusable control.
+Launcher refresh timing varies by device. MainActivity remains enabled for
+authentication links; launcher aliases alone are toggled. After changing an
+icon, test reopening from the launcher and Google/password-reset callbacks.
+An Android build is required for icon changes; web deployment alone is not enough.
+
 Capacitor packages the built React app inside an Android APK. It does not just
 open the hosted website. Accounts, photos, partner chat and saved workouts still
 use the same Supabase backend; AI plan generation uses the Vercel API.

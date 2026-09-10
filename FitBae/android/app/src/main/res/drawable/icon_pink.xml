@@ -1,0 +1,4 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><solid android:color="#f5a1c3" /></shape></item>
+    <item android:drawable="@drawable/fitbae_mark" />
+</layer-list>
