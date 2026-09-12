@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { equipmentLibrary } from "../src/lib/equipmentLibrary.js";
 import {
   WEEK_DAYS,
   normalizeAndValidateWorkoutPlan,
@@ -125,4 +126,28 @@ test("timed and distance prescriptions keep their real training units", () => {
   assert.equal(distance.kind, "distance");
   assert.equal(distance.unit, "meters");
   assert.equal(distance.min, 400);
+});
+
+test("select-all equipment validates finishers beyond the first twenty selections", () => {
+  const equipment = equipmentLibrary.map((item) => item.id);
+  const finisherEquipment = equipment[25];
+  assert.ok(finisherEquipment);
+  const plan = samplePlan();
+  plan.weekly_schedule[0].partner_finisher = {
+    name: "Alternating finisher",
+    duration_minutes: 4,
+    equipment_ids: [finisherEquipment],
+    instructions: ["Alternate easy rounds."],
+  };
+  const result = normalizeAndValidateWorkoutPlan(plan, {
+    selectedEquipment: equipment,
+    expectedFrequency: 1,
+  });
+  assert.equal(result.valid, true, JSON.stringify(result.errors));
+
+  const unavailable = normalizeAndValidateWorkoutPlan(plan, {
+    selectedEquipment: equipment.filter((id) => id !== finisherEquipment),
+    expectedFrequency: 1,
+  });
+  assert.ok(unavailable.errors.some((issue) => issue.code === "finisher.equipment_unavailable"));
 });

@@ -84,7 +84,7 @@ function asStringArray(value, maxItems = 10, maxLength = 240) {
 }
 
 function uniqueStrings(value) {
-  return [...new Set(asStringArray(value, 20, 80))];
+  return [...new Set(asStringArray(value, Infinity, 80))];
 }
 
 function titleFromId(value) {

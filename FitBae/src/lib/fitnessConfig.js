@@ -281,6 +281,7 @@ Equipment constraints:
 - Each equipment-based exercise must use an equipment_id exactly as written above.
 - A genuinely equipment-free bodyweight movement may use null for equipment_id.
 - If the available selection is limited, prefer safe bodyweight movements instead of inventing equipment.
+- Partner finishers must be equipment-free, with equipment_ids: [], including their solo alternative.
 
 Programming and safety constraints:
 - Return exactly seven days, Monday through Sunday, with exactly ${context.training_days} active days and ${7 - context.training_days} rest days.
@@ -291,6 +292,7 @@ Programming and safety constraints:
 - Pain, dizziness, or loss of control is a stop signal; include that succinctly in safety_note.
 - Use numeric integers for sets, rest_seconds, starting_weight_lbs, estimated_duration_mins, and partner-finisher duration_minutes.
 - IDs must be lowercase kebab-case and unique. They will be normalized again by the application.
+- Keep all coaching text concise: short sentences, three instructions per exercise, one cue, and one common mistake. Do not repeat guidance across fields. Return compact JSON without indentation.
 
 Return raw JSON only, with no Markdown or comments, using this complete shape:
 {

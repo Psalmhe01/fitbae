@@ -157,6 +157,9 @@ async function generateWithGemini(context, apiKey) {
           candidateCount: 1,
           temperature: 0.35,
           maxOutputTokens: 16_384,
+          ...(model === DEFAULT_MODEL
+            ? { thinkingConfig: { thinkingBudget: 0 } }
+            : {}),
         },
       }),
     },

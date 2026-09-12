@@ -156,6 +156,7 @@ async function requestGeminiDirectly(context, apiKey) {
           candidateCount: 1,
           temperature: 0.35,
           maxOutputTokens: 16_384,
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
       signal: timeout.controller.signal,
