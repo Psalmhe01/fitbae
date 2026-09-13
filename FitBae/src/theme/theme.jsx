@@ -56,16 +56,17 @@ export function ThemeProvider({ children }) {
     luminanceThreshold: 0.32,
     colors: { brand: palette === 'green' ? brand : [97, 93, 88, 83, 78, 74, 70, 49, 36, 25].map((l) => `hsl(${palettes[palette].hue}, ${palettes[palette].saturation}%, ${l}%)`) },
     defaultRadius: "md",
-    fontFamily: '"Aptos", "Segoe UI Variable", "Segoe UI", Helvetica, Arial, sans-serif',
+    radius: { xs: "4px", sm: "6px", md: "8px", lg: "12px", xl: "16px" },
+    fontFamily: '"Manrope", "Segoe UI", sans-serif',
     headings: {
-      fontFamily: '"Arial Narrow", "Aptos Display", "Segoe UI Variable Display", sans-serif',
-      fontWeight: "760",
+      fontFamily: '"Manrope", "Segoe UI", sans-serif',
+      fontWeight: "650",
     },
     components: {
       Loader: { defaultProps: { children: <PairedWeights /> } },
       Button: {
         defaultProps: { radius: "md" },
-        styles: { root: { fontWeight: 720, letterSpacing: "-0.01em" } },
+        styles: { root: { fontWeight: 650, letterSpacing: "-0.01em" } },
       },
       Paper: { defaultProps: { radius: "lg" } },
       TextInput: {

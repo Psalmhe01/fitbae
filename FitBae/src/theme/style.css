@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/Manrope-variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
+
 :root,
 :root[data-theme="light"] {
   --brand: #b8df27;
@@ -45,7 +53,7 @@ html,
 body {
   background: var(--canvas);
   color: var(--ink);
-  font-family: "Aptos", "Segoe UI Variable", "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: "Manrope", "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -73,28 +81,25 @@ body {
   padding-top: max(var(--modal-y-offset, 5dvh), var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
 }
 
-body {
-  background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--line) 24%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--line) 20%, transparent) 1px, transparent 1px);
-  background-size: 48px 48px;
-}
+body { line-height: 1.6; }
+.mantine-Title-root { letter-spacing: -0.035em; text-wrap: balance; }
+.mantine-InputWrapper-label { font-weight: 600; margin-bottom: 6px; }
 
 .bg-hero,
 .app-shell { min-height: 100svh; background: var(--canvas); }
 
 .brand-mark { color: var(--brand); flex: 0 0 auto; }
-.brand-wordmark { color: var(--ink); font-size: 1.05rem; font-weight: 900; letter-spacing: -0.055em; }
+.brand-wordmark { color: var(--ink); font-size: 1.05rem; font-weight: 750; letter-spacing: -0.045em; }
 .brand-wordmark span { color: var(--brand-strong); }
 
 .surface,
-.glass { background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-xs); }
+.glass { background: var(--surface); border: 1px solid var(--line); box-shadow: none; }
 .surface-raised,
-.glass-strong { background: var(--surface-raised); border: 1px solid var(--line); box-shadow: var(--shadow-sm); }
+.glass-strong { background: var(--surface-raised); border: 1px solid var(--line); box-shadow: var(--shadow-xs); }
 .shadow-glow { box-shadow: var(--shadow-sm); }
 .text-gradient { color: var(--ink); }
 
-.eyebrow { color: var(--ink-soft); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+.eyebrow { color: var(--ink-soft); font-size: 0.72rem; font-weight: 650; letter-spacing: 0.09em; text-transform: uppercase; }
 .metric-number { color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -0.045em; }
 
 .app-header {
@@ -110,7 +115,7 @@ body {
   transition: background 140ms ease, color 140ms ease, transform 140ms ease;
 }
 .nav-link:hover { background: rgba(255, 255, 255, 0.07); color: white; transform: translateX(2px); }
-.nav-link[data-active="true"] { color: var(--brand-ink); background: var(--brand); }
+.nav-link[data-active="true"] { color: var(--brand); background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.1); }
 .mobile-nav {
   background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
   border-top: 1px solid var(--line);
@@ -131,18 +136,10 @@ body {
   color: #f7f8ee;
   background: #171b16;
   border: 1px solid #262c23;
-  box-shadow: var(--shadow-lg);
+  box-shadow: none;
 }
 .today-card::after {
-  content: "";
-  position: absolute;
-  width: 220px;
-  height: 220px;
-  right: -80px;
-  top: -90px;
-  border: 44px solid var(--brand);
-  border-radius: 50%;
-  opacity: 0.13;
+  content: none;
 }
 
 .day-pill {

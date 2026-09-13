@@ -142,6 +142,12 @@ intact. Install the updated APK to receive these changes in the native app.
 
 ## Before a public release
 
+Version 1.5 bundles Manrope (with its SIL Open Font License) for consistent
+offline typography, refines cards and navigation, and includes the full-list
+equipment validation fix. Install over the existing debug build to retain
+device preferences and workout drafts. Server generation changes still require
+a Vercel deployment.
+
 Version 1.3 replaces loading spinners with paired dumbbells doing alternating
 reps. Account and page loading include branded status text; buttons and inline
 loaders use the compact motif. Reduced-motion mode shows stationary weights.
